@@ -5,6 +5,7 @@
  */
 
 import { toNamespacedPath } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 
 type GetFileSecurityW = (
   path: string,
@@ -40,6 +41,17 @@ const PROTECTED_DACL_SECURITY_INFORMATION = 0x80000000
 const ERROR_FILE_NOT_FOUND = 2
 const ERROR_PATH_NOT_FOUND = 3
 const ERROR_ACCESS_DENIED = 5
+const ERROR_SHARING_VIOLATION = 32
+const ERROR_LOCK_VIOLATION = 33
+const ERROR_UNABLE_TO_REMOVE_REPLACED = 1175
+const REPLACE_RETRY_DELAYS_MS = [25, 50, 100] as const
+
+/** Win32 failures a holder of the destination may release before the next attempt. */
+const RETRYABLE_REPLACE_ERRORS = new Set([
+  ERROR_SHARING_VIOLATION,
+  ERROR_LOCK_VIOLATION,
+  ERROR_UNABLE_TO_REMOVE_REPLACED,
+])
 
 let bindings: Win32Bindings | undefined
 
@@ -64,6 +76,10 @@ function errnoCode(win32Code: number): string {
       return 'ENOENT'
     case ERROR_ACCESS_DENIED:
       return 'EACCES'
+    case ERROR_SHARING_VIOLATION:
+    case ERROR_LOCK_VIOLATION:
+    case ERROR_UNABLE_TO_REMOVE_REPLACED:
+      return 'EBUSY'
     default:
       return 'EIO'
   }
@@ -116,19 +132,28 @@ export async function copyFileDaclWin32(source: string, destination: string): Pr
 
 /**
  * Replace a Windows file while preserving the replaced file's ACL and other replace metadata.
+ * Transient sharing, byte-range lock, and delete-of-replaced conflicts receive three bounded
+ * retries; every other Win32 failure is reported after the first attempt.
  * @param replaced - existing destination file.
  * @param replacement - closed staging file on the same volume.
+ * @param signal - cancels a retry wait before another native publication attempt.
  */
-export async function replaceFileWin32(replaced: string, replacement: string): Promise<void> {
+export async function replaceFileWin32(
+  replaced: string,
+  replacement: string,
+  signal?: AbortSignal,
+): Promise<void> {
   const api = await win32()
-  if (api.replaceFileW(
-    toNamespacedPath(replaced),
-    toNamespacedPath(replacement),
-    null,
-    0,
-    null,
-    null,
-  ) === 0) {
-    throw win32Error('ReplaceFileW', api.getLastError(), replaced)
+  const replacedPath = toNamespacedPath(replaced)
+  const replacementPath = toNamespacedPath(replacement)
+  for (let attempt = 0; ; attempt += 1) {
+    if (api.replaceFileW(replacedPath, replacementPath, null, 0, null, null) !== 0) return
+    const lastError = api.getLastError()
+    const retryDelay = REPLACE_RETRY_DELAYS_MS[attempt]
+    if (RETRYABLE_REPLACE_ERRORS.has(lastError) && retryDelay !== undefined) {
+      await delay(retryDelay, undefined, signal ? { signal } : undefined)
+      continue
+    }
+    throw win32Error('ReplaceFileW', lastError, replaced)
   }
 }

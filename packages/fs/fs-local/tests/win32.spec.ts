@@ -97,7 +97,7 @@ describe('Windows file-security helpers', () => {
   })
 
   it('maps descriptor-size probe failures to Node-style codes', async () => {
-    const cases = [[2, 'ENOENT'], [3, 'ENOENT'], [5, 'EACCES'], [9999, 'EIO']] as const
+    const cases = [[2, 'ENOENT'], [3, 'ENOENT'], [5, 'EACCES'], [32, 'EBUSY'], [33, 'EBUSY'], [1175, 'EBUSY'], [9999, 'EIO']] as const
     for (const [win32Code, code] of cases) {
       const native = successfulNative(Buffer.from([1]))
       native.getFileSecurityW = (_path, _requested, _output, _length, needed) => {
@@ -134,13 +134,73 @@ describe('Windows file-security helpers', () => {
     })
 
     const replaceFailure = successfulNative(Buffer.from([1]))
-    replaceFailure.replaceFileW = () => 0
-    replaceFailure.getLastError = () => 2
+    replaceFailure.replaceFileW = (replaced, replacement) => {
+      replaceFailure.replacements.push([replaced, replacement])
+      return 0
+    }
+    replaceFailure.getLastError = () => 1176
     const replaceModule = await importWithNative(replaceFailure)
     await expect(replaceModule.replaceFileWin32('target', 'temp')).rejects.toMatchObject({
-      code: 'ENOENT',
+      code: 'EIO',
       syscall: 'ReplaceFileW',
+      win32Code: 1176,
       path: 'target',
     })
+    expect(replaceFailure.replacements).toHaveLength(1)
+  })
+
+  it('retries transient sharing, lock, and delete conflicts before replacing', async () => {
+    const native = successfulNative(Buffer.from([1]))
+    const failures = [32, 1175, 33]
+    native.replaceFileW = (replaced, replacement) => {
+      native.replacements.push([replaced, replacement])
+      return failures.length === 0 ? 1 : 0
+    }
+    native.getLastError = () => failures.shift() ?? 0
+    const { replaceFileWin32 } = await importWithNative(native)
+
+    await replaceFileWin32('target', 'temp')
+
+    expect(native.replacements).toEqual(Array.from({ length: 4 }, () => [
+      toNamespacedPath('target'),
+      toNamespacedPath('temp'),
+    ]))
+  })
+
+  it('reports a persistent sharing or delete conflict after the bounded retries', async () => {
+    for (const win32Code of [32, 1175]) {
+      const native = successfulNative(Buffer.from([1]))
+      native.replaceFileW = (replaced, replacement) => {
+        native.replacements.push([replaced, replacement])
+        return 0
+      }
+      native.getLastError = () => win32Code
+      const { replaceFileWin32 } = await importWithNative(native)
+
+      await expect(replaceFileWin32('target', 'temp')).rejects.toMatchObject({
+        code: 'EBUSY',
+        syscall: 'ReplaceFileW',
+        win32Code,
+        path: 'target',
+      })
+      expect(native.replacements).toHaveLength(4)
+    }
+  })
+
+  it('stops before another replacement attempt when the retry wait is aborted', async () => {
+    const native = successfulNative(Buffer.from([1]))
+    const controller = new AbortController()
+    native.replaceFileW = (replaced, replacement) => {
+      native.replacements.push([replaced, replacement])
+      controller.abort()
+      return 0
+    }
+    native.getLastError = () => 32
+    const { replaceFileWin32 } = await importWithNative(native)
+
+    await expect(replaceFileWin32('target', 'temp', controller.signal)).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+    expect(native.replacements).toHaveLength(1)
   })
 })
