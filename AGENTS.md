@@ -173,3 +173,7 @@ Docs accompany every code change: update affected README and JSDoc contracts tog
 ## Vendoring policy
 
 `vendor/` packages are pinned source copies (manifest with upstream SHAs in [vendor/README.md](vendor/README.md)). Update via the sync procedure there; re-apply or retire the logged local modifications; rerun `pnpm run test && pnpm run build`.
+
+## Local requirement notes
+
+Record each local requirement or fix under [.agents/skills/dsh-rebase-onto-master/notes](.agents/skills/dsh-rebase-onto-master/notes/README.md) in the same change. Rebase with [dsh-rebase-onto-master](.agents/skills/dsh-rebase-onto-master/SKILL.md), which defaults to the newest release commit on `origin/master`, drops work that base already contains, and rebases onto the tip of `master` only when asked. Local patches stay replayable: source and tests only, never README, Agent Notes, or pairing files.
