@@ -443,6 +443,56 @@ async function desktopLauncher(entry: DesktopEntry, internals: ResolvedInternals
 }
 
 /**
+ * Shell-script shims a Windows install ships beside its real executable
+ * (`bin\code.cmd`, `bin\cursor.cmd`). Spawning one inserts a `cmd.exe`
+ * intermediary, so the application is not started by this launcher and
+ * treats the start as non-user-initiated.
+ */
+const SHELL_SHIM = /\.(?:cmd|bat)$/i
+
+/** The real executables one shim line launches: quoted, backslash, or forward-slash candidates. */
+const SHIM_EXECUTABLE = /(?:%~dp0[\\/]?|\.\.[\\/]|[A-Z]:[\\/])[^"'\r\n]*?\.exe/gi
+
+/**
+ * Resolve a Windows `.cmd`/`.bat` shim to the executable it launches, so a
+ * launch skips the console intermediary (see {@link SHELL_SHIM}). Reads the
+ * script and takes the first `%~dp0`-relative or absolute `.exe` reference
+ * that exists on disk; an unreadable script, no match, or no candidate on
+ * disk leaves the shim in place — the caller still has a working launcher.
+ * @param script - the resolved program, possibly a shim.
+ * @returns the launched executable's path, or null when this is not a resolvable shim.
+ */
+async function derefShellShim(script: string): Promise<string | null> {
+  if (!SHELL_SHIM.test(script)) return null
+  let source: string
+  try {
+    source = await readFile(script, 'utf8')
+  } catch {
+    // Swallows ENOENT/EACCES: an unreadable shim is not a resolvable one.
+    return null
+  }
+  const scriptDir = dirname(script)
+  for (const [reference] of source.matchAll(SHIM_EXECUTABLE)) {
+    const raw = reference.replace(/^%~dp0[\\/]?/i, '').trim()
+    // VS Code's shim uses backslashes; a relative candidate still has to
+    // join on POSIX test hosts that do not treat `\` as a separator.
+    const candidate = isAbsolute(raw) ? raw : join(scriptDir, raw.replaceAll('\\', '/'))
+    if (await isFile(candidate)) return candidate
+  }
+  return null
+}
+
+/**
+ * The program one located candidate actually launches: the candidate itself,
+ * or the executable behind it when it is a shell shim.
+ * @param program - the program a locator proved on disk.
+ * @returns the program to spawn.
+ */
+async function spawnProgram(program: string): Promise<string> {
+  return await derefShellShim(program) ?? program
+}
+
+/**
  * First token of an `Exec=` value.
  * @param exec - the raw `Exec=` value, when the entry carries one.
  * @returns the quoted path or the run up to whitespace; null when absent or blank.
@@ -523,15 +573,16 @@ async function locate(
         env: { ...internals.env },
       })) return null
       const found = await internals.resolveExecutable(locator.name)
-      return found === null
-        ? null
-        : { launch: { kind: 'argv', command: found, args: locator.args }, icon: executableIcon(found, internals) }
+      if (found === null) return null
+      const program = await spawnProgram(found)
+      return { launch: { kind: 'argv', command: program, args: locator.args }, icon: executableIcon(program, internals) }
     }
     case 'file': {
       for (const candidate of locator.candidates) {
         const path = expandCandidate(candidate, internals)
         if (path !== null && await isFile(path)) {
-          return { launch: { kind: 'argv', command: path, args: locator.args }, icon: executableIcon(path, internals) }
+          const program = await spawnProgram(path)
+          return { launch: { kind: 'argv', command: program, args: locator.args }, icon: executableIcon(program, internals) }
         }
       }
       return null
@@ -561,14 +612,16 @@ async function locate(
     case 'app-paths': {
       const target = (await registry.read()).appPaths.get(locator.exe.toLowerCase())
       if (target === undefined || !await isFile(target)) return null
-      return { launch: { kind: 'argv', command: target, args: locator.args }, icon: { kind: 'executable', path: target } }
+      const program = await spawnProgram(target)
+      return { launch: { kind: 'argv', command: program, args: locator.args }, icon: { kind: 'executable', path: program } }
     }
     case 'install-record': {
       for (const record of (await registry.read()).installRecords) {
         if (!record.displayName.startsWith(locator.displayNamePrefix)) continue
         const launcher = await recordLauncher(record, locator.relativeLauncher, internals)
         if (launcher !== null) {
-          return { launch: { kind: 'argv', command: launcher, args: locator.args }, icon: { kind: 'executable', path: launcher } }
+          const program = await spawnProgram(launcher)
+          return { launch: { kind: 'argv', command: program, args: locator.args }, icon: { kind: 'executable', path: program } }
         }
       }
       return null

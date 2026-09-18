@@ -165,7 +165,7 @@ describe('resolveOpenInAppApps', () => {
     })
     const map = await resolveOpenInAppApps(TIMEOUT_MS, bare({ platform: 'win32', env: {}, run }))
     expect(map.get('vscode')).toEqual({
-      launch: { kind: 'argv', command: code, args: [] },
+      launch: { kind: 'argv', command: code, args: ['--new-window'] },
       icon: { kind: 'executable', path: code },
     })
     expect(map.get('sublimetext')?.launch).toMatchObject({ kind: 'argv', command: sublime })
@@ -236,7 +236,7 @@ describe('resolveLaunch locators', () => {
     const found = await resolveLaunch(byId('vscode'), TIMEOUT_MS, bare({
       platform: 'win32', env: { LOCALAPPDATA: local, ProgramFiles: programFiles }, run: runner(() => ''),
     }))
-    expect(found?.launch).toEqual({ kind: 'argv', command: code, args: [] })
+    expect(found?.launch).toEqual({ kind: 'argv', command: code, args: ['--new-window'] })
     expect(found?.icon).toEqual({ kind: 'executable', path: code })
     // An unset ${LOCALAPPDATA} skips Cursor's only file candidate entirely.
     await expect(resolveLaunch(byId('cursor'), TIMEOUT_MS, bare({ platform: 'win32', env: {}, run: runner(() => '') })))
@@ -312,6 +312,111 @@ describe('resolveLaunch locators', () => {
     // Unreadable registry roots (reg.exe rejects) contribute nothing.
     await expect(resolveLaunch(byId('cursor'), TIMEOUT_MS, bare({ platform: 'win32', env: {} })))
       .resolves.toBeNull()
+  })
+
+  it('spawns the executable behind a Windows .cmd shim instead of the shim itself', async () => {
+    const root = await tempRoot()
+    const code = join(root, 'Code.exe')
+    const shim = join(root, 'bin', 'code.cmd')
+    await mkdir(join(root, 'bin'), { recursive: true })
+    await writeFile(code, 'exe')
+    // The shape VS Code's own `bin\code.cmd` uses: a %~dp0-relative launch.
+    await writeFile(shim, [
+      '@echo off',
+      'setlocal',
+      'set VSCODE_DEV=',
+      'set ELECTRON_RUN_AS_NODE=1',
+      '"%~dp0..\\Code.exe" "%~dp0..\\resources\\app\\out\\cli.js" %*',
+      '',
+    ].join('\r\n'))
+    const run = runner((command, args) => {
+      if (command !== 'reg.exe' || !String(args[1]).includes('App Paths')) return ''
+      // A registration pointing at the shim, not at the executable.
+      return [
+        `${String(args[1])}\\Code.exe`,
+        `    (Default)    REG_SZ    ${shim}`,
+        '',
+      ].join('\r\n')
+    })
+    const found = await resolveLaunch(byId('vscode'), TIMEOUT_MS, bare({ platform: 'win32', env: {}, run }))
+    expect(found?.launch).toEqual({ kind: 'argv', command: code, args: ['--new-window'] })
+    expect(found?.icon).toEqual({ kind: 'executable', path: code })
+  })
+
+  it('dereferences a PATH-resolved shim, and keeps the shim when it proves no executable', async () => {
+    const root = await tempRoot()
+    const real = join(root, 'Code.exe')
+    const good = join(root, 'bin', 'code.cmd')
+    const noMatch = join(root, 'bin', 'nomatch.cmd')
+    const dangling = join(root, 'bin', 'dangling.cmd')
+    const unreadable = join(root, 'bin', 'unreadable.cmd')
+    await mkdir(join(root, 'bin'), { recursive: true })
+    await writeFile(real, 'exe')
+    await writeFile(good, '"%~dp0..\\Code.exe" %*')
+    // A shim that names no executable at all, and one whose only candidate is
+    // absent: neither proves a better program, so the shim stays.
+    await writeFile(noMatch, '@echo off\r\necho nothing here\r\n')
+    await writeFile(dangling, '"%~dp0..\\Gone.exe" %*')
+    // A directory whose name matches the shim suffix is not readable as a script.
+    await mkdir(unreadable)
+    const internals = bare({
+      platform: 'win32', env: {},
+      resolveExecutable: pathTable({ code: good, blank: noMatch, dangling }),
+    })
+    // The `cli` locator is vscode's last resort, so silencing the registry and
+    // the file candidates leaves it as the only locator that can answer.
+    const found = await resolveLaunch(byId('vscode'), TIMEOUT_MS, internals)
+    expect(found?.launch).toEqual({ kind: 'argv', command: real, args: ['--new-window'] })
+    await expect(resolveLaunch(byId('windowsterminal'), TIMEOUT_MS, bare({
+      platform: 'win32', env: {}, resolveExecutable: pathTable({ wt: noMatch }),
+    }))).resolves.toMatchObject({ launch: { command: noMatch } })
+    await expect(resolveLaunch(byId('windowsterminal'), TIMEOUT_MS, bare({
+      platform: 'win32', env: {}, resolveExecutable: pathTable({ wt: dangling }),
+    }))).resolves.toMatchObject({ launch: { command: dangling } })
+    await expect(resolveLaunch(byId('windowsterminal'), TIMEOUT_MS, bare({
+      platform: 'win32', env: {}, resolveExecutable: pathTable({ wt: unreadable }),
+    }))).resolves.toMatchObject({ launch: { command: unreadable } })
+
+    // An absolute .exe in the script (drive-letter on Windows, `%~dp0/` plus
+    // the POSIX path on other hosts) is used as-is, not joined to the shim dir.
+    const absoluteShim = join(root, 'bin', 'absolute.cmd')
+    const shimBody = /^[A-Za-z]:[\\/]/.test(real)
+      ? `"${real}" %*`
+      : `"%~dp0/${real}" %*`
+    await writeFile(absoluteShim, shimBody)
+    await expect(resolveLaunch(byId('windowsterminal'), TIMEOUT_MS, bare({
+      platform: 'win32', env: {}, resolveExecutable: pathTable({ wt: absoluteShim }),
+    }))).resolves.toMatchObject({ launch: { command: real } })
+  })
+
+  it('opens VS Code folders in their own window, leaving reuse of an already-open folder to the editor', async () => {
+    const root = await tempRoot()
+    const code = join(root, 'Code.exe')
+    await writeFile(code, 'exe')
+    const run = runner((command, args) =>
+      command === 'reg.exe' && String(args[1]).includes('App Paths')
+        ? [`${String(args[1])}\\Code.exe`, `    (Default)    REG_SZ    ${code}`, ''].join('\r\n')
+        : '')
+    // `--new-window` rather than `--reuse-window`: the latter sets the editor's
+    // forceReuseWindow and replaces its last active window, so a second
+    // workspace would evict the first. The editor still focuses a window that
+    // already holds this exact directory before opening another one, which is
+    // the only case where a project's window is reused.
+    const found = await resolveLaunch(byId('vscode'), TIMEOUT_MS, bare({ platform: 'win32', env: {}, run }))
+    expect(found?.launch).toEqual({ kind: 'argv', command: code, args: ['--new-window'] })
+  })
+
+  it('falls back to the shim when its executable vanished, so the launch reports missing', async () => {
+    const root = await tempRoot()
+    const shim = join(root, 'code.cmd')
+    await writeFile(shim, '@echo off\r\n"%~dp0Gone.exe" %*')
+    const launch = vi.fn<OpenInAppLauncher>(() => Promise.reject(
+      Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' }),
+    ))
+    await expect(launchResolved(
+      { launch: { kind: 'argv', command: shim, args: [] } }, root, 50, bare({ platform: 'win32', launch }),
+    )).resolves.toBe('missing')
+    expect(launch).toHaveBeenCalledWith(shim, [root], expect.anything())
   })
 
   it('verifies Uninstall records through InstallLocation and falls back to the DisplayIcon executable', async () => {
