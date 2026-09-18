@@ -66,6 +66,12 @@ export type OpenInAppLaunchOutcome = 'launched' | 'missing' | 'failed'
  * catches launchers that fail immediately: rejects on a spawn failure and on
  * a nonzero exit inside the window; a child still running when the window
  * closes is unrefed and counted launched, never killed.
+ *
+ * The inherited `ELECTRON_RUN_AS_NODE` is removed before adapter entries merge:
+ * the Desktop Host runs the same Electron executable in Node mode, so a GUI
+ * Electron application would start as Node, reject its own argv, and exit
+ * nonzero inside the watch window. An adapter that wants Node mode declares it
+ * in its own `launch.env`.
  * @param command - executable path or PATH name.
  * @param args - argv (never a shell string).
  * @param options - watch-window length and adapter-specific process options.
@@ -73,11 +79,13 @@ export type OpenInAppLaunchOutcome = 'launched' | 'missing' | 'failed'
  */
 export const launchDetachedApp: OpenInAppLauncher = (command, args, options) =>
   new Promise((resolve, reject) => {
+    const inherited = scrubbedParentEnv()
+    delete inherited.ELECTRON_RUN_AS_NODE
     const child = spawn(command, [...args], {
       detached: true,
       stdio: 'ignore',
       windowsHide: options.windowsHide,
-      env: { ...scrubbedParentEnv(), ...options.env },
+      env: { ...inherited, ...options.env },
     })
     let settled = false
     const settle = (outcome: () => void): void => {
