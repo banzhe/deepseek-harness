@@ -13,6 +13,20 @@ export type OpenInAppPlatform = 'darwin' | 'win32' | 'linux'
 export const PATH_TOKEN = '{path}'
 
 /**
+ * Editor launch args opening the folder in its own window, reusing an
+ * already-open window only for that same directory. A direct executable launch
+ * carries no CLI preference, so the editor would otherwise treat the last
+ * active window as its target and replace the directory that window holds;
+ * the editor's folder-open handling looks for a window already holding the
+ * exact directory first and focuses it, so distinct projects stay open side by
+ * side while the window a project already owns is still reused. Unlike the
+ * editor's own `window.openFoldersInNewWindow` preference this does not depend
+ * on a setting the deployment cannot see. `resolver.ts` still appends the
+ * directory itself (no `{path}` token here).
+ */
+export const NEW_WINDOW = ['--new-window'] as const
+
+/**
  * How a resolved application takes the workspace directory. `argv` spawns the
  * launcher detached with the directory substituted into (or appended to) its
  * argv. Its optional environment entries overlay the credential-scrubbed
@@ -217,12 +231,12 @@ export const OPEN_IN_APP_CATALOG: readonly OpenInAppApp[] = [
     platforms: {
       darwin: macApp('Visual Studio Code.app'),
       win32: spec(
-        appPaths('Code.exe'),
-        installRecord('Microsoft Visual Studio Code', 'Code.exe'),
+        appPaths('Code.exe', ...NEW_WINDOW),
+        installRecord('Microsoft Visual Studio Code', 'Code.exe', ...NEW_WINDOW),
         file([
           '${LOCALAPPDATA}/Programs/Microsoft VS Code/Code.exe',
           '${ProgramFiles}/Microsoft VS Code/Code.exe',
-        ]),
+        ], ...NEW_WINDOW),
       ),
       linux: desktopSpec('code', cli('code')),
     },
