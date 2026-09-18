@@ -17,19 +17,32 @@ it('ships install metadata with the built web application', async () => {
     start_url: '/',
     scope: '/',
     display: 'fullscreen',
-    icons: [{
-      src: '/favicon.svg',
-      sizes: 'any',
-      type: 'image/svg+xml',
-      purpose: 'any',
-    }],
+    icons: [
+      { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/icon-maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+      { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ],
   })
 })
 
-it('ships a favicon that switches to a light mark under dark color scheme', async () => {
-  const favicon = await readFile(join(DIST_ROOT, 'favicon.svg'), 'utf8')
-  // The light fill must live inside the dark-scheme media query, so the icon
-  // stays black in light mode and only turns white under a dark scheme.
-  expect(favicon).toMatch(/@media \(prefers-color-scheme: dark\)\s*{\s*path\s*{[^}]*fill:\s*#fff/i)
-  expect(favicon).toContain('fill="#000"')
+it('ships the rounded tab and launcher icons beside the opaque platform-masked set', async () => {
+  // A rounded icon carries transparent corners, so it must never be declared
+  // `maskable`: the platform mask would cut a second shape inside the first.
+  // Rounded assets are PNG color type 6 (truecolor with alpha), masked ones 2.
+  const pngs: [string, number][] = [
+    ['icon-192.png', 6],
+    ['icon-512.png', 6],
+    ['icon-maskable-192.png', 2],
+    ['icon-maskable-512.png', 2],
+    ['apple-touch-icon.png', 2],
+  ]
+  for (const [name, colorType] of pngs) {
+    const bytes = await readFile(join(DIST_ROOT, name))
+    expect([bytes[0], bytes.subarray(1, 4).toString('latin1')], name).toEqual([0x89, 'PNG'])
+    expect(bytes[25], name).toBe(colorType)
+  }
+  expect([...(await readFile(join(DIST_ROOT, 'favicon.ico'))).subarray(0, 4)]).toEqual([0x00, 0x00, 0x01, 0x00])
+  // The retired SVG mark must not linger and shadow the raster set.
+  await expect(readFile(join(DIST_ROOT, 'favicon.svg'))).rejects.toThrow()
 })
