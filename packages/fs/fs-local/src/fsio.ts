@@ -90,7 +90,7 @@ export interface FsIoInternals {
   /** Override the Win32 DACL copy boundary. */
   copyFileDacl?: (source: string, destination: string) => Promise<void>
   /** Override the Win32 security-preserving replacement boundary. */
-  replaceFile?: (replaced: string, replacement: string) => Promise<void>
+  replaceFile?: (replaced: string, replacement: string, signal?: AbortSignal) => Promise<void>
   /** Override the hard-link no-replace publication boundary. */
   linkFile?: (existingPath: string, newPath: string) => Promise<void>
   /** Override target inspection after guarded publication fails. */
@@ -638,7 +638,7 @@ export async function writeFileAtomic(
       }
     } else if (platform === 'win32' && mode !== undefined) {
       try {
-        await replaceFile(absolutePath, tempPath)
+        await replaceFile(absolutePath, tempPath, signal)
       } catch (error: unknown) {
         // If the observed target disappears during staging, the protected DACL
         // already copied to the temp remains authoritative for recreation.
@@ -654,7 +654,6 @@ export async function writeFileAtomic(
       // The target is committed; owner-only staging residue cannot turn that write into a failure.
     }
   } catch (error: unknown) {
-    /* v8 ignore next -- abort-mid-write needs a writeFile/signal race; the non-abort (rename/open) side is tested. */
     let failure: unknown = isAbortError(error) ? new FsError('write aborted', 'FS_ABORTED') : error
     /* v8 ignore next 8 -- reached only if writeFile/sync throws with the handle open (IO fault); close-failure is a double fault. */
     if (handle) {
