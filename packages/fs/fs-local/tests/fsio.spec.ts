@@ -10,6 +10,7 @@ import { chmod, mkdtemp, readFile, rename, rm, stat, symlink, unlink, writeFile,
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, parse, relative, resolve } from 'node:path'
 import { createServer } from 'node:net'
+import { setTimeout as delay } from 'node:timers/promises'
 import {
   applyLiteralEdit,
   listDirectory,
@@ -763,21 +764,43 @@ describe('writeFileAtomic — temp-file safety', () => {
     const file = join(dir, 'a.txt')
     await writeFile(file, 'old')
     const calls: string[] = []
+    const controller = new AbortController()
 
-    await writeFileAtomic(file, 'new', 0o666, undefined, {
+    await writeFileAtomic(file, 'new', 0o666, controller.signal, {
       platform: 'win32',
       copyFileDacl: async (source, temp) => {
         calls.push(`copy:${source}`)
         expect(await readFile(temp, 'utf8')).toBe('')
       },
-      replaceFile: async (target, temp) => {
+      replaceFile: async (target, temp, signal) => {
         calls.push(`replace:${target}`)
+        expect(signal).toBe(controller.signal)
         await rename(temp, target)
       },
     })
 
     expect(calls).toEqual([`copy:${file}`, `replace:${file}`])
     expect(await readFile(file, 'utf8')).toBe('new')
+  })
+
+  it('maps cancellation during a Windows replacement retry and preserves the old target', async () => {
+    const file = join(dir, 'a.txt')
+    await writeFile(file, 'old')
+    const controller = new AbortController()
+
+    await expect(writeFileAtomic(file, 'new', 0o666, controller.signal, {
+      platform: 'win32',
+      copyFileDacl: () => Promise.resolve(),
+      replaceFile: async (_target, _temp, signal) => {
+        if (signal === undefined) throw new Error('missing replacement abort signal')
+        const wait = delay(1_000, undefined, { signal })
+        controller.abort()
+        await wait
+      },
+    })).rejects.toMatchObject({ code: 'FS_ABORTED' })
+
+    expect(await readFile(file, 'utf8')).toBe('old')
+    expect((await readdir(dir)).filter(name => name.includes('.tmp'))).toEqual([])
   })
 
   it('creates a new Windows file through directory inheritance without replacement calls', async () => {
