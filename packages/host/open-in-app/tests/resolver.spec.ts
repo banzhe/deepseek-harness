@@ -165,7 +165,7 @@ describe('resolveOpenInAppApps', () => {
     })
     const map = await resolveOpenInAppApps(TIMEOUT_MS, bare({ platform: 'win32', env: {}, run }))
     expect(map.get('vscode')).toEqual({
-      launch: { kind: 'argv', command: code, args: [] },
+      launch: { kind: 'argv', command: code, args: ['--new-window'] },
       icon: { kind: 'executable', path: code },
     })
     expect(map.get('sublimetext')?.launch).toMatchObject({ kind: 'argv', command: sublime })
@@ -236,7 +236,7 @@ describe('resolveLaunch locators', () => {
     const found = await resolveLaunch(byId('vscode'), TIMEOUT_MS, bare({
       platform: 'win32', env: { LOCALAPPDATA: local, ProgramFiles: programFiles }, run: runner(() => ''),
     }))
-    expect(found?.launch).toEqual({ kind: 'argv', command: code, args: [] })
+    expect(found?.launch).toEqual({ kind: 'argv', command: code, args: ['--new-window'] })
     expect(found?.icon).toEqual({ kind: 'executable', path: code })
     // An unset ${LOCALAPPDATA} skips Cursor's only file candidate entirely.
     await expect(resolveLaunch(byId('cursor'), TIMEOUT_MS, bare({ platform: 'win32', env: {}, run: runner(() => '') })))
@@ -312,6 +312,24 @@ describe('resolveLaunch locators', () => {
     // Unreadable registry roots (reg.exe rejects) contribute nothing.
     await expect(resolveLaunch(byId('cursor'), TIMEOUT_MS, bare({ platform: 'win32', env: {} })))
       .resolves.toBeNull()
+  })
+
+  it('opens VS Code folders in their own window, leaving reuse of an already-open folder to the editor', async () => {
+    const root = await tempRoot()
+    const code = join(root, 'Code.exe')
+    await writeFile(code, 'exe')
+    const run = runner((command, args) =>
+      command === 'reg.exe' && String(args[1]).includes('App Paths')
+        ? [`${String(args[1])}\\Code.exe`, `    (Default)    REG_SZ    ${code}`, ''].join('\r\n')
+        : '')
+    // `--new-window`: a direct executable launch carries no CLI preference, so
+    // the editor would otherwise take the last active window as its target and
+    // replace the directory it holds, evicting a second workspace. The editor
+    // still focuses a window that already holds this exact directory before
+    // opening another one, which is the only case where a project's window is
+    // reused.
+    const found = await resolveLaunch(byId('vscode'), TIMEOUT_MS, bare({ platform: 'win32', env: {}, run }))
+    expect(found?.launch).toEqual({ kind: 'argv', command: code, args: ['--new-window'] })
   })
 
   it('verifies Uninstall records through InstallLocation and falls back to the DisplayIcon executable', async () => {
