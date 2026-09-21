@@ -258,6 +258,22 @@ export function ProjectRowItem({ group, containsCurrentDescendant = false, onTog
     >
       <span className={clsx(css.slot, css.folder, active && css.folderActive)}>
         {row.expanded ? <IconFolderOpenRegular /> : <IconFolderCloseRegular />}
+        {/* Folded group holding executing work: the rows that would carry the
+            running dot are off screen, so the folder glyph carries it. The
+            badge rides the folder span, so row hover swaps it out with the
+            chevron exactly like the glyph it annotates. */}
+        {row.running && (
+          <span className={css.folderActivity} role="img" aria-label={t('group.running')}>
+            <StateDot state="ongoing" size={7} />
+          </span>
+        )}
+        {/* Same seat for the folded group's completion reminder: the hidden
+            row's done dot reports on the closed folder instead. */}
+        {row.completedUnread && !row.running && (
+          <span className={css.folderActivity} role="img" aria-label={t('group.completed')}>
+            <StateDot state="done" size={7} />
+          </span>
+        )}
       </span>
       <span className={clsx(css.slot, css.chevron)}>
         <IconTriangleRightFillRegular className={clsx(css.arrow, row.expanded && css.arrowOpen)} />

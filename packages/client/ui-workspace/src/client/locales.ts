@@ -8,6 +8,8 @@
 export const zh = {
   'defaultWorkspace.failed': '无法创建默认工作区，请通过“选择工作区”选择文件夹',
   'group.ungrouped': '未分组',
+  'group.running': '有会话正在运行',
+  'group.completed': '有会话已完成，未读',
   'session.new': '新会话',
   'session.untitled': '未命名',
   'shortcut.noSession': '请先选择一个会话',
@@ -127,6 +129,8 @@ export type WorkspaceKey = keyof typeof zh
 export const en = {
   'defaultWorkspace.failed': 'Unable to create default workspace. Use Choose workspace to select a folder.',
   'group.ungrouped': 'Ungrouped',
+  'group.running': 'A session is running',
+  'group.completed': 'A session finished and is unread',
   'session.new': 'New Session',
   'session.untitled': 'Untitled',
   'shortcut.noSession': 'Select a session first',
