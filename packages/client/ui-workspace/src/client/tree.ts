@@ -50,7 +50,7 @@ export interface SessionNode {
   /** A Session-scoped UI consumer is awaiting this user. */
   pendingInteraction?: SessionPendingInteractionStatus
   running: boolean
-  /** Running direct children in the loaded subagent catalog. */
+  /** Running subagent descendants at any depth. */
   runningSubagentCount: number
   /** Finished running while not selected and not yet opened (the green "done" reminder dot). */
   completed: boolean
@@ -81,6 +81,18 @@ export interface GroupNode {
   expanded: boolean
   /** The group contains the selected session (active folder tint; supplied here so the renderer never scans). */
   containsCurrent: boolean
+  /**
+   * A folded group holds executing work — its own running Session or a running
+   * descendant — so the header's closed-folder icon carries the activity the
+   * hidden rows would otherwise show. Always false while the group is expanded.
+   */
+  running: boolean
+  /**
+   * A folded group holds a visible finished-but-unviewed Session, so the
+   * header's closed-folder icon carries the completion reminder the hidden row
+   * would otherwise show. Always false while the group is expanded.
+   */
+  completedUnread: boolean
   /** Visible session rows (empty while the group is folded). */
   sessions: readonly SessionNode[]
 }
@@ -93,7 +105,7 @@ export interface SearchResultNode {
   /** A Session-scoped UI consumer is awaiting this user. */
   pendingInteraction?: SessionPendingInteractionStatus
   running: boolean
-  /** Running direct children in the loaded subagent catalog. */
+  /** Running subagent descendants at any depth. */
   runningSubagentCount: number
   /** Finished running while not selected and not yet opened (the green "done" reminder dot). */
   completed: boolean
@@ -287,6 +299,42 @@ function sessionTitle(session: SessionSummary): string {
   return session.blank ? '' : (session.title?.trim() ?? '')
 }
 
+/**
+ * Folded-group activity: an expanded group shows every row's own status dot, so
+ * the header icon reports activity only while those rows are off screen.
+ * @param sessions - the group's visible member summaries.
+ * @param descendants - running subagent descendant counts by ancestor.
+ * @param expanded - whether the group's rows are on screen.
+ * @returns whether the folded group holds a Session that runs or has a running descendant.
+ */
+function groupRunning(
+  sessions: readonly SessionSummary[],
+  descendants: RunningDescendants,
+  expanded: boolean,
+): boolean {
+  if (expanded) return false
+  return sessions.some(s => s.running || (descendants.get(s.id) ?? 0) > 0)
+}
+
+/**
+ * Folded-group completion reminder: an expanded group shows every row's own
+ * done dot, so the header icon reports the reminder only while those rows are
+ * off screen. Subagent children never count — they are absent from the group's
+ * visible members, and the hidden row's reminder is the only fact to carry.
+ * @param sessions - the group's visible member summaries.
+ * @param statuses - unified UI status by Session.
+ * @param expanded - whether the group's rows are on screen.
+ * @returns whether the folded group holds a finished-but-unviewed Session.
+ */
+function groupCompletedUnread(
+  sessions: readonly SessionSummary[],
+  statuses: SessionStatuses,
+  expanded: boolean,
+): boolean {
+  if (expanded) return false
+  return sessions.some(s => statuses.get(s.id)?.completionUnread === true)
+}
+
 /** Build one group without projecting session lineage into presentation. */
 function buildGroup(
   key: string,
@@ -378,17 +426,81 @@ function visiblePendingKind(kind: string | undefined): SessionPendingInteraction
   }
 }
 
-function runningChildCount(list: SessionListState, parentId: SessionId, statuses: SessionStatuses): number {
-  return list.projectionsBySession[parentId]?.values.subagentCatalog?.reduce(
-    (count, child) => count + ((statuses.get(child.id)?.running ?? list.byId[child.id]?.running) === true ? 1 : 0),
-    0,
-  ) ?? 0
+/** Running subagent descendants of one Session, keyed for every Session that has at least one. */
+type RunningDescendants = ReadonlyMap<SessionId, number>
+
+/** One iteration state of the explicit-lineage walk: the Session being descended and its cursor. */
+interface LineageFrame {
+  readonly id: SessionId
+  readonly rows: readonly SessionId[]
+  next: number
+}
+
+function sessionIsRunning(list: SessionListState, statuses: SessionStatuses, id: SessionId): boolean {
+  return (statuses.get(id)?.running ?? list.byId[id]?.running) === true
+}
+
+/**
+ * Count running subagent descendants of every Session, at any depth, in one
+ * post-order pass over durable lineage: a child row whose `origin` is
+ * `subagent` holds its parent whether or not that parent's catalog is loaded,
+ * while a fork shares `parentId` without the origin and never counts. Lineage
+ * is read as data, so a cycle visits each Session once instead of looping.
+ * @param list - sessions list snapshot carrying lineage and rows.
+ * @param statuses - unified UI status by Session; absent entries fall back to the summary bit.
+ * @returns each ancestor's running descendant count, omitting Sessions with none.
+ */
+function runningDescendantCounts(list: SessionListState, statuses: SessionStatuses): RunningDescendants {
+  const children = new Map<SessionId, SessionId[]>()
+  for (const id of Object.keys(list.byId) as SessionId[]) {
+    const row = list.byId[id]
+    const parentId = row?.parentId
+    if (row?.origin !== 'subagent' || parentId === undefined || parentId === id) continue
+    const siblings = children.get(parentId)
+    if (siblings === undefined) children.set(parentId, [id])
+    else siblings.push(id)
+  }
+  const counts = new Map<SessionId, number>()
+  if (children.size === 0) return counts
+  // Only a Session with child edges holds a running descendant, so every
+  // ancestor is reachable from one of these roots. An explicit stack keeps a
+  // delegation chain of any configured depth off the call stack.
+  const visited = new Set<SessionId>()
+  const frames: LineageFrame[] = []
+  for (const [rootId, rootRows] of children) {
+    if (visited.has(rootId)) continue
+    visited.add(rootId)
+    frames.push({ id: rootId, rows: rootRows, next: 0 })
+    while (frames.length > 0) {
+      // Every pushed frame is removed exactly once, and the loop condition
+      // guarantees a top frame; the cast states that rather than re-testing it.
+      const frame = frames[frames.length - 1] as LineageFrame
+      if (frame.next < frame.rows.length) {
+        const childId = frame.rows[frame.next] as SessionId
+        frame.next += 1
+        // A child already on this stack closes a lineage loop; it is visited
+        // once and contributes no separate row, so skip the descent.
+        if (!visited.has(childId)) {
+          visited.add(childId)
+          frames.push({ id: childId, rows: children.get(childId) ?? [], next: 0 })
+        }
+        continue
+      }
+      frames.pop()
+      let total = 0
+      for (const childId of frame.rows) {
+        total += (counts.get(childId) ?? 0) + (sessionIsRunning(list, statuses, childId) ? 1 : 0)
+      }
+      if (total > 0) counts.set(frame.id, total)
+    }
+  }
+  return counts
 }
 
 function sessionNode(
   s: SessionSummary,
-  list: SessionListState,
   statuses: SessionStatuses,
+  descendants: RunningDescendants,
   pinned: ReadonlySet<SessionId>,
   archived: ReadonlySet<SessionId>,
 ): SessionNode {
@@ -399,7 +511,7 @@ function sessionNode(
     title: sessionTitle(s),
     blank: s.blank,
     running: status?.running ?? s.running,
-    runningSubagentCount: runningChildCount(list, s.id, statuses),
+    runningSubagentCount: descendants.get(s.id) ?? 0,
     completed: status?.completionUnread === true,
     pinned: !archived.has(s.id) && pinned.has(s.id),
     archived: archived.has(s.id),
@@ -436,6 +548,7 @@ export function deriveGroups(
   const pinned = new Set(rowState.pinnedSessionIds)
   const expandedGroups = new Set(view.expandedGroups)
   const current = mainSessionId(list)
+  const descendants = runningDescendantCounts(list, statuses)
   const currentGroup = current === undefined
     ? undefined
     : owningGroupKey(workspaces, current)
@@ -451,9 +564,11 @@ export function deriveGroups(
       sessionCount: g.sessions.length,
       expanded,
       containsCurrent: g.key === currentGroup,
+      running: groupRunning(g.sessions, descendants, expanded),
+      completedUnread: groupCompletedUnread(g.sessions, statuses, expanded),
       sessions: expanded
         ? sectionMembers(g.sessions, pinned, archived)
-          .map(session => sessionNode(session, list, statuses, pinned, archived))
+          .map(session => sessionNode(session, statuses, descendants, pinned, archived))
         : [],
     })
   }
@@ -507,6 +622,7 @@ export function deriveFlat(
   const archived = new Set(rowState.archivedSessionIds)
   const pinned = new Set(rowState.pinnedSessionIds)
   const current = mainSessionId(list)
+  const descendants = runningDescendantCounts(list, statuses)
   const members = sessionIds.flatMap((id) => {
     const session = list.byId[id]
     return session !== undefined && sessionVisible(session, current, archived, rowState.archivedFilter)
@@ -514,7 +630,7 @@ export function deriveFlat(
       : []
   })
   return sectionMembers(members, pinned, archived)
-    .map(session => sessionNode(session, list, statuses, pinned, archived))
+    .map(session => sessionNode(session, statuses, descendants, pinned, archived))
 }
 
 /**
@@ -545,6 +661,7 @@ export function deriveSearchResults(
   if (q === '') return { items: [], hasMore: false }
   const archived = new Set(archivedSessionIds)
   const current = mainSessionId(list)
+  const descendants = runningDescendantCounts(list, statuses)
 
   const workspaceBySession = new Map<SessionId, string>()
   for (const workspace of workspaces) {
@@ -600,7 +717,7 @@ export function deriveSearchResults(
         title: sessionTitle(summary),
         workspace: labelOf(summary),
         running: status?.running ?? summary.running,
-        runningSubagentCount: runningChildCount(list, summary.id, statuses),
+        runningSubagentCount: descendants.get(summary.id) ?? 0,
         ...(pendingInteraction === undefined
           ? {}
           : { pendingInteraction }),

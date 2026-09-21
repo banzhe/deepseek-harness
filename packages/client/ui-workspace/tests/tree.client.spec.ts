@@ -357,7 +357,7 @@ describe('deriveGroups', () => {
     expect(search.items[0]?.completed).toBe(true)
   })
 
-  it('hides subagent-origin sessions and reads direct running counts from catalogs', () => {
+  it('hides subagent-origin sessions and counts their running descendants at any depth', () => {
     const parent = summary('parent', 1)
     const subagent = {
       ...summary('subagent', 3), parentId: parent.id, origin: 'subagent' as const, running: true,
@@ -390,23 +390,26 @@ describe('deriveGroups', () => {
 
     expect(groups[0]!.sessions.map(node => node.id)).toEqual([parent.id, fork.id])
     expect(groups[0]!.sessionCount).toBe(2)
-    expect(groups[0]!.sessions[0]).toMatchObject({ running: false, runningSubagentCount: 1 })
+    // A fork shares `parentId` without the subagent origin, so the running
+    // grandchild counts for its grandparent and the fork's own child for the fork.
+    expect(groups[0]!.sessions[0]).toMatchObject({ running: false, runningSubagentCount: 2 })
     expect(groups[0]!.sessions[1]).toMatchObject({ running: false, runningSubagentCount: 1 })
     expect(deriveFlat(sessions, visibleSessionIds(sessions, noArchive, 'default'), noRows, noAttention)
       .map(node => [node.id, node.runningSubagentCount])).toEqual([
-      [parent.id, 1], [fork.id, 1],
+      [parent.id, 2], [fork.id, 1],
     ])
     expect(deriveSearchResults(
       sessions, [workspace('first', ['parent', 'fork'])], 'parent', noArchive, 'default',
       noAttention, { items: [], hasMore: false }, 10,
-    ).items[0]).toMatchObject({ id: parent.id, runningSubagentCount: 1 })
+    ).items[0]).toMatchObject({ id: parent.id, runningSubagentCount: 2 })
   })
 
-  it('uses current child status only for members of the direct parent catalog', () => {
+  it('counts every running subagent descendant, whether or not its catalog is loaded', () => {
     const parent = summary('parent', 1)
-    const child = { ...summary('child', 2), running: false }
-    const stopped = { ...summary('stopped', 3), running: true }
-    const unrelated = { ...summary('unrelated', 4), parentId: parent.id, running: true }
+    const child = { ...summary('child', 2), parentId: parent.id, origin: 'subagent' as const, running: false }
+    const stopped = { ...summary('stopped', 3), parentId: parent.id, origin: 'subagent' as const, running: true }
+    // Not in the loaded catalog: lineage alone still makes it a counted descendant.
+    const unrelated = { ...summary('unrelated', 4), parentId: parent.id, origin: 'subagent' as const, running: true }
     const sessions = {
       ...list(parent, child, stopped, unrelated),
       projectionsBySession: {
@@ -423,9 +426,37 @@ describe('deriveGroups', () => {
       deriveFlat(sessions, [parent.id], noRows, snapshot)[0]!.runningSubagentCount,
       deriveSearchResults(sessions, [], 'parent', noArchive, 'default', snapshot, { items: [], hasMore: false }, 10).items[0]!.runningSubagentCount,
     ]
-    expect(counts(statuses)).toEqual([1, 1, 1])
+    // Latest UI status wins over the summary bit: `child` runs and `stopped` does not.
+    expect(counts(statuses)).toEqual([2, 2, 2])
     statuses.set(child.id, status(undefined, { running: false }))
-    expect(counts(statuses)).toEqual([0, 0, 0])
+    expect(counts(statuses)).toEqual([1, 1, 1])
+  })
+
+  it('reports a running grandchild through an idle intermediate parent', () => {
+    const root = summary('root', 1)
+    // The intermediate child owns the running grandchild but is itself idle and
+    // has never had its own catalog loaded in this client.
+    const intermediate = { ...summary('intermediate', 2), parentId: root.id, origin: 'subagent' as const, running: false }
+    const grandchild = { ...summary('grandchild', 3), parentId: intermediate.id, origin: 'subagent' as const, running: true }
+    const sessions = list(root, intermediate, grandchild)
+    const groups = deriveGroups(
+      sessions, [workspace('first', ['root'])], noRows, noAttention, view(['first']),
+    )
+    expect(groups[0]!.sessions[0]).toMatchObject({ id: root.id, running: false, runningSubagentCount: 1 })
+    expect(groups[0]!.sessions[0]!.running).toBe(false)
+  })
+
+  it('stays finite on self-referencing and cyclic subagent lineage', () => {
+    const root = summary('root', 1)
+    const running = { ...summary('running', 2), parentId: root.id, origin: 'subagent' as const, running: true }
+    const self = { ...summary('self', 3), parentId: sid('self'), origin: 'subagent' as const, running: true }
+    const cycleA = { ...summary('cycle-a', 4), parentId: sid('cycle-b'), origin: 'subagent' as const, running: true }
+    const cycleB = { ...summary('cycle-b', 5), parentId: sid('cycle-a'), origin: 'subagent' as const, running: true }
+    const sessions = list(root, running, self, cycleA, cycleB)
+    // The visible root still counts its own running child, and the self-edge and
+    // two-node loop terminate instead of recursing.
+    expect(deriveFlat(sessions, [root.id], noRows, noAttention)
+      .map(node => [node.id, node.runningSubagentCount])).toEqual([[root.id, 1]])
   })
 
   it('ignores fork lineage and sorts every ungrouped session as a top-level row', () => {
@@ -539,6 +570,60 @@ describe('deriveGroups', () => {
     expect(groups.map(group => [group.key, group.sessionCount])).toEqual([
       ['empty', archivedFilter === 'show' ? 1 : 0],
     ])
+  })
+
+  it('reports folded-group activity and clears it while the rows are on screen', () => {
+    const idle = summary('idle', 5)
+    const active = { ...summary('active', 4), running: true }
+    const sessions = list(idle, active)
+    const workspaces = [workspace('project', ['idle', 'active'])]
+
+    // Folded: the hidden running row surfaces through the group fact.
+    expect(deriveGroups(sessions, workspaces, noRows, noAttention, view())[0]!.running).toBe(true)
+    // Expanded: every row carries its own status dot, so the group fact clears.
+    expect(deriveGroups(
+      sessions, workspaces, noRows, noAttention, view(['project']),
+    )[0]!.running).toBe(false)
+  })
+
+  it('reports folded-group activity for a running child and for a quiet group not at all', () => {
+    const parent = summary('parent', 3)
+    const child = { ...summary('child', 2), parentId: parent.id, origin: 'subagent' as const, running: true }
+    const quiet = summary('quiet', 1)
+    const sessions = { ...list(parent, child, quiet), projectionsBySession: { [parent.id]: catalog('child') } }
+
+    expect(deriveGroups(
+      sessions, [workspace('project', ['parent'])], noRows, noAttention, view(),
+    )[0]!.running).toBe(true)
+    expect(deriveGroups(
+      sessions, [workspace('quiet', ['quiet'])], noRows, noAttention, view(),
+    )[0]!.running).toBe(false)
+  })
+
+  it('reports the folded group completion reminder and clears it while the rows are on screen', () => {
+    const unread = summary('unread', 5)
+    const quiet = summary('quiet', 4)
+    const sessions = list(unread, quiet)
+    const attention: SessionStatusSnapshot = new Map([
+      [unread.id, status(undefined, { completionUnread: true })],
+    ])
+
+    // Folded: the hidden done row surfaces through the group fact.
+    const folded = deriveGroups(
+      sessions, [workspace('project', ['unread', 'quiet'])], noRows, attention, view(),
+    )
+    expect(folded[0]!.completedUnread).toBe(true)
+    // A status entry alone is not presence: the Session must be a visible member.
+    const outside: SessionStatusSnapshot = new Map([
+      [sid('elsewhere'), status(undefined, { completionUnread: true })],
+    ])
+    expect(deriveGroups(
+      sessions, [workspace('project', ['unread', 'quiet'])], noRows, outside, view(),
+    )[0]!.completedUnread).toBe(false)
+    // Expanded: every row carries its own done dot, so the group fact clears.
+    expect(deriveGroups(
+      sessions, [workspace('project', ['unread', 'quiet'])], noRows, attention, view(['project']),
+    )[0]!.completedUnread).toBe(false)
   })
 
   it('marks selected Workspace and Ungrouped sessions without relying on an Intent', () => {

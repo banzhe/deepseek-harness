@@ -893,7 +893,7 @@ describe('WorkspaceBrowser', () => {
 
   it('covers the current session and a parent with a running child', () => {
     const items = Array.from({ length: 9 }, (_, index) => summary(`session-${index + 1}`, 9 - index))
-    const child = summary('child', 0, { origin: 'subagent', running: true })
+    const child = summary('child', 0, { origin: 'subagent', parentId: sid('session-7'), running: true })
     const b = mount({
       useSessions: hook(sessionState([...items, child], {
         projectionsBySession: {
