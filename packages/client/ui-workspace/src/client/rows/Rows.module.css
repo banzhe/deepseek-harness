@@ -145,6 +145,27 @@
 .projectRow:hover .chevron { display: inline-flex; }
 .projectRow:hover .folder { display: none; }
 
+/* Anchors the folded group's activity badge on the glyph's bottom-right. */
+.folder {
+  position: relative;
+}
+
+/* Executing badge: the sidebar fill keeps the disc opaque so the folder
+   outline and the row's hover fill never read through the animated dot. */
+.folderActivity {
+  position: absolute;
+  right: -2px;
+  bottom: 1px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  corner-shape: round;
+  background: var(--dsw-specific-sidebar-fill);
+}
+
 /* Expand arrow (filled triangle): points right closed, rotates to point down open. */
 .arrow {
   transition: transform 150ms var(--ds-ease-in-out);

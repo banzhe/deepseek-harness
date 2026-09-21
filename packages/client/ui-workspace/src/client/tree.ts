@@ -79,6 +79,12 @@ export interface GroupNode {
   expanded: boolean
   /** The group contains the selected session (active folder tint; supplied here so the renderer never scans). */
   containsCurrent: boolean
+  /**
+   * A folded group holds executing work — its own running Session or a running
+   * descendant — so the header's closed-folder icon carries the activity the
+   * hidden rows would otherwise show. Always false while the group is expanded.
+   */
+  running: boolean
   /** Visible session rows (empty while the group is folded). */
   sessions: readonly SessionNode[]
 }
@@ -295,6 +301,25 @@ function sessionTitle(session: SessionSummary): string {
   return session.blank ? '' : session.displayTitle
 }
 
+/**
+ * Folded-group activity: an expanded group shows every row's own status dot, so
+ * the header icon reports activity only while those rows are off screen.
+ * @param sessions - the group's visible member summaries.
+ * @param list - sessions list snapshot whose subagent catalog names direct children.
+ * @param statuses - unified UI status by Session.
+ * @param expanded - whether the group's rows are on screen.
+ * @returns whether the folded group holds a Session that runs or has a running child.
+ */
+function groupRunning(
+  sessions: readonly SessionSummary[],
+  list: SessionListState,
+  statuses: SessionStatuses,
+  expanded: boolean,
+): boolean {
+  if (expanded) return false
+  return sessions.some(s => s.running || runningChildCount(list, s.id, statuses) > 0)
+}
+
 /** Build one group without projecting session lineage into presentation. */
 function buildGroup(
   key: string,
@@ -458,6 +483,7 @@ export function deriveGroups(
       sessionCount: g.sessions.length,
       expanded,
       containsCurrent: g.key === currentGroup,
+      running: groupRunning(g.sessions, list, statuses, expanded),
       sessions: expanded
         ? sectionMembers(g.sessions, pinned, archived)
           .map(session => sessionNode(session, list, statuses, pinned, archived))

@@ -506,6 +506,34 @@ describe('deriveGroups', () => {
     ])
   })
 
+  it('reports folded-group activity and clears it while the rows are on screen', () => {
+    const idle = summary('idle', 5)
+    const active = { ...summary('active', 4), running: true }
+    const sessions = list(idle, active)
+    const workspaces = [workspace('project', ['idle', 'active'])]
+
+    // Folded: the hidden running row surfaces through the group fact.
+    expect(deriveGroups(sessions, workspaces, noRows, noAttention, view())[0]!.running).toBe(true)
+    // Expanded: every row carries its own status dot, so the group fact clears.
+    expect(deriveGroups(
+      sessions, workspaces, noRows, noAttention, view(['project']),
+    )[0]!.running).toBe(false)
+  })
+
+  it('reports folded-group activity for a running child and for a quiet group not at all', () => {
+    const parent = summary('parent', 3)
+    const child = { ...summary('child', 2), parentId: parent.id, origin: 'subagent' as const, running: true }
+    const quiet = summary('quiet', 1)
+    const sessions = { ...list(parent, child, quiet), projectionsBySession: { [parent.id]: catalog('child') } }
+
+    expect(deriveGroups(
+      sessions, [workspace('project', ['parent'])], noRows, noAttention, view(),
+    )[0]!.running).toBe(true)
+    expect(deriveGroups(
+      sessions, [workspace('quiet', ['quiet'])], noRows, noAttention, view(),
+    )[0]!.running).toBe(false)
+  })
+
   it('marks selected Workspace and Ungrouped sessions without relying on an Intent', () => {
     const owned = summary('owned', 1)
     const loose = summary('loose', 2)
