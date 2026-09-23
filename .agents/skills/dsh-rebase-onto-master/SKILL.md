@@ -196,4 +196,19 @@ git push --force-with-lease=<branch>:<observed-oid> origin <branch>
 
 5. Select post-rewrite checks with [dsh-pre-push-checks](../dsh-pre-push-checks/SKILL.md) when the user asked to push or to claim the branch is ready.
 
+## Build on this machine
+
+A rebase replaces commits; it does not refresh build outputs. After the replay finishes, build locally:
+
+```sh
+pnpm install
+pnpm run build
+```
+
+Run `pnpm install` whenever the replay touched `pnpm-lock.yaml`, a `package.json`, or a workspace manifest: the rewritten tree can disagree with the installed `node_modules`. `pnpm run build` emits `lib/` and the runtime bundles under the current toolchain, which is the artifact-plane evidence that source-plane tests do not produce.
+
+Stop and report instead of continuing when either command fails. Name the failing package, the first error line, and the fix; do not edit unrelated source to clear the failure. When the failure names a package the base removed, run `pnpm run clean` and rebuild before diagnosing further.
+
+Report the build result, and the commands run, with the rest of the rebase report.
+
 Report the version and base used, the new `HEAD`, which notes landed, which commits were skipped or dropped, the migration document path, and any remaining local notes.

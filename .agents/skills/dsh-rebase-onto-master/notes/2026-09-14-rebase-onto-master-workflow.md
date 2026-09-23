@@ -16,7 +16,9 @@
   - `## Summarize the branch`
   - `## Check machine compatibility`
   - `## Write the migration document`
+  - `## Build on this machine`
   - `git rebase --empty=drop --onto "$base" "$fork"`
+  - `pnpm run build`
 
 ## Intent
 
@@ -28,6 +30,8 @@ The base defaults to the newest released version, which reaches `master` as a co
 
 A rebase replays commits and nothing else, so the skill also captures what no commit can replay: it summarizes the branch, checks this machine against what the branch requires, and writes a tracked migration document under `migrations/` before rewriting history, so another checkout can migrate after `git pull`. The document records toolchain and tool requirements, environment variable names, deleted-path references in DSH profiles and root scripts, and per-machine state such as the profile, the shortcut, and the taskbar pin.
 
+The replay leaves build outputs untouched, so the skill ends with a local build on this machine: `pnpm install` whenever the replay touched `pnpm-lock.yaml`, a `package.json`, or a workspace manifest, then `pnpm run build` for `lib/` and the runtime bundles. A failing build stops the rebase report and names the failing package and fix.
+
 ## Already-on-master test
 
-On `origin/master`, search for `dsh-rebase-onto-master`. The work has landed when `.agents/skills/dsh-rebase-onto-master/SKILL.md` exists, tells agents to write notes under `notes/` before rebasing, resolves its default base from the newest `release(dsh): <version>` commit with `--empty=drop --onto "$base" "$fork"`, and writes a tracked `migrations/` document from `## Summarize the branch`, `## Check machine compatibility`, and `## Write the migration document`. On `AGENTS.md`, the same search finds `## Local requirement notes` with `Local patches stay replayable`.
+On `origin/master`, search for `dsh-rebase-onto-master`. The work has landed when `.agents/skills/dsh-rebase-onto-master/SKILL.md` exists, tells agents to write notes under `notes/` before rebasing, resolves its default base from the newest `release(dsh): <version>` commit with `--empty=drop --onto "$base" "$fork"`, writes a tracked `migrations/` document from `## Summarize the branch`, `## Check machine compatibility`, and `## Write the migration document`, and ends with `## Build on this machine` running `pnpm install` and `pnpm run build`. On `AGENTS.md`, the same search finds `## Local requirement notes` with `Local patches stay replayable`.
