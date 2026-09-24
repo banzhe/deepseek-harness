@@ -146,7 +146,7 @@ describe('workspace browser rows', () => {
     const onCreate = vi.fn()
     const group: GroupNode = {
       key: 'project', workspaceId: wid('project'), cwd: '/projects/project', createdAt: 0, label: 'Project',
-      sessionCount: 1, expanded: true, containsCurrent: true, running: false, sessions: [],
+      sessionCount: 1, expanded: true, containsCurrent: true, running: false, completedUnread: false, sessions: [],
     }
     render(<ProjectRowItem group={group} onToggle={onToggle} onCreate={onCreate} t={t}
       newShortcut={{ id: 'session.new' as never, label: 'New', aliases: [], binding: null,
@@ -165,7 +165,7 @@ describe('workspace browser rows', () => {
     const onToggle = vi.fn()
     const folded: GroupNode = {
       key: 'project', workspaceId: wid('project'), cwd: '/projects/project', createdAt: 0, label: 'Project',
-      sessionCount: 2, expanded: false, containsCurrent: false, running: true, sessions: [],
+      sessionCount: 2, expanded: false, containsCurrent: false, running: true, completedUnread: false, sessions: [],
     }
     const view = render(<ProjectRowItem group={folded} onToggle={onToggle} onCreate={vi.fn()} t={t} />)
     const badge = screen.getByRole('img', { name: '有会话正在运行' })
@@ -180,6 +180,33 @@ describe('workspace browser rows', () => {
     )
     expect(screen.queryByRole('img', { name: '有会话正在运行' })).toBeNull()
     expect(screen.getByRole('treeitem').querySelector('[data-state="ongoing"]')).toBeNull()
+  })
+
+  it('badges the closed folder of a folded group with an unread completion and cedes to running', () => {
+    const onToggle = vi.fn()
+    const folded: GroupNode = {
+      key: 'project', workspaceId: wid('project'), cwd: '/projects/project', createdAt: 0, label: 'Project',
+      sessionCount: 1, expanded: false, containsCurrent: false, running: false, completedUnread: true, sessions: [],
+    }
+    const view = render(<ProjectRowItem group={folded} onToggle={onToggle} onCreate={vi.fn()} t={t} />)
+    const badge = screen.getByRole('img', { name: '有会话已完成，未读' })
+    expect(screen.getByRole('treeitem').querySelector('[data-state="done"]')).not.toBeNull()
+    // The badge is a marker, not a control: the enclosing row stays the only action.
+    expect(badge.getAttribute('tabindex')).toBeNull()
+    fireEvent.click(badge)
+    expect(onToggle).toHaveBeenCalledOnce()
+
+    view.rerender(
+      <ProjectRowItem group={{ ...folded, running: true }} onToggle={onToggle} onCreate={vi.fn()} t={t} />,
+    )
+    expect(screen.queryByRole('img', { name: '有会话已完成，未读' })).toBeNull()
+    expect(screen.getByRole('img', { name: '有会话正在运行' })).toBeTruthy()
+
+    view.rerender(
+      <ProjectRowItem group={{ ...folded, expanded: true, completedUnread: false }} onToggle={onToggle} onCreate={vi.fn()} t={t} />,
+    )
+    expect(screen.queryByRole('img', { name: '有会话已完成，未读' })).toBeNull()
+    expect(screen.getByRole('treeitem').querySelector('[data-state="done"]')).toBeNull()
   })
 
   it('renders and opens a selected running Session row', () => {
@@ -454,7 +481,7 @@ describe('workspace browser rows', () => {
     const onToggle = vi.fn()
     const group: GroupNode = {
       key: 'project', workspaceId: wid('project'), cwd: '/projects/project', createdAt: 0, label: 'Project',
-      sessionCount: 0, expanded: false, containsCurrent: false, running: false, sessions: [],
+      sessionCount: 0, expanded: false, containsCurrent: false, running: false, completedUnread: false, sessions: [],
     }
     render(<ProjectRowItem
       group={group} onToggle={onToggle} onCreate={vi.fn()}
@@ -485,7 +512,7 @@ describe('workspace browser rows', () => {
     try {
       const group: GroupNode = {
         key: 'project', workspaceId: wid('project'), cwd: '/projects/project', createdAt: 0, label: 'Project',
-        sessionCount: 0, expanded: false, containsCurrent: false, running: false, sessions: [],
+        sessionCount: 0, expanded: false, containsCurrent: false, running: false, completedUnread: false, sessions: [],
       }
       render(<ProjectRowItem group={group} onToggle={vi.fn()} onCreate={vi.fn()} t={t} />)
       fireEvent.pointerEnter(screen.getByRole('treeitem').parentElement as HTMLElement)
@@ -508,7 +535,7 @@ describe('workspace browser rows', () => {
     try {
       const group: GroupNode = {
         key: 'project', workspaceId: wid('project'), cwd: '/projects/project', createdAt: 0, label: 'Project',
-        sessionCount: 0, expanded: false, containsCurrent: false, running: false, sessions: [],
+        sessionCount: 0, expanded: false, containsCurrent: false, running: false, completedUnread: false, sessions: [],
       }
       render(<ProjectRowItem group={group} onToggle={vi.fn()} onCreate={vi.fn()} t={t} />)
       const row = screen.getByRole('treeitem')
@@ -541,7 +568,7 @@ describe('workspace browser rows', () => {
     try {
       const group: GroupNode = {
         key: 'project', workspaceId: wid('project'), cwd: '/projects/project', createdAt: 0, label: 'Project',
-        sessionCount: 0, expanded: false, containsCurrent: false, running: false, sessions: [],
+        sessionCount: 0, expanded: false, containsCurrent: false, running: false, completedUnread: false, sessions: [],
       }
       render(<ProjectRowItem group={group} onToggle={vi.fn()} onCreate={vi.fn()} t={t} />)
       const row = screen.getByRole('treeitem')
@@ -567,7 +594,7 @@ describe('workspace browser rows', () => {
     try {
       const group: GroupNode = {
         key: 'project', workspaceId: wid('project'), cwd: '/home/u/Documents/project', createdAt: 0, label: 'Project',
-        sessionCount: 0, expanded: false, containsCurrent: false, running: false, sessions: [],
+        sessionCount: 0, expanded: false, containsCurrent: false, running: false, completedUnread: false, sessions: [],
       }
       render(<ProjectRowItem group={group} home="/home/u" onToggle={vi.fn()} onCreate={vi.fn()} t={t} />)
       fireEvent.pointerEnter(screen.getByRole('treeitem').parentElement as HTMLElement)
@@ -587,7 +614,7 @@ describe('workspace browser rows', () => {
     try {
       const group: GroupNode = {
         key: 'project', workspaceId: wid('project'), cwd: undefined, createdAt: 0, label: 'Project',
-        sessionCount: 0, expanded: false, containsCurrent: false, running: false, sessions: [],
+        sessionCount: 0, expanded: false, containsCurrent: false, running: false, completedUnread: false, sessions: [],
       }
       render(<ProjectRowItem group={group} home="/home/u" onToggle={vi.fn()} onCreate={vi.fn()} t={t} />)
       fireEvent.pointerEnter(screen.getByRole('treeitem').parentElement as HTMLElement)
@@ -605,7 +632,7 @@ describe('workspace browser rows', () => {
     try {
       const group: GroupNode = {
         key: 'project', workspaceId: wid('project'), cwd: 'C:\\Users\\u\\project', createdAt: 0, label: 'Project',
-        sessionCount: 0, expanded: false, containsCurrent: false, running: false, sessions: [],
+        sessionCount: 0, expanded: false, containsCurrent: false, running: false, completedUnread: false, sessions: [],
       }
       render(<ProjectRowItem group={group} home="C:\\Users\\u" onToggle={vi.fn()} onCreate={vi.fn()} t={t} />)
       fireEvent.pointerEnter(screen.getByRole('treeitem').parentElement as HTMLElement)
@@ -619,7 +646,7 @@ describe('workspace browser rows', () => {
   it('ungrouped bucket renders no workspace menu', () => {
     const group: GroupNode = {
       key: '', workspaceId: undefined, cwd: undefined, createdAt: undefined, label: 'Ungrouped',
-      sessionCount: 0, expanded: false, containsCurrent: false, running: false, sessions: [],
+      sessionCount: 0, expanded: false, containsCurrent: false, running: false, completedUnread: false, sessions: [],
     }
     render(<ProjectRowItem group={group} onToggle={vi.fn()} onCreate={vi.fn()} t={t} />)
     expect(screen.queryByRole('button', { name: /工作区/ })).toBeNull()

@@ -267,6 +267,13 @@ export function ProjectRowItem({ group, containsCurrentDescendant = false, onTog
             <StateDot state="ongoing" size={7} />
           </span>
         )}
+        {/* Same seat for the folded group's completion reminder: the hidden
+            row's done dot reports on the closed folder instead. */}
+        {row.completedUnread && !row.running && (
+          <span className={css.folderActivity} role="img" aria-label={t('group.completed')}>
+            <StateDot state="done" size={7} />
+          </span>
+        )}
       </span>
       <span className={clsx(css.slot, css.chevron)}>
         <IconTriangleRightFillRegular className={clsx(css.arrow, row.expanded && css.arrowOpen)} />

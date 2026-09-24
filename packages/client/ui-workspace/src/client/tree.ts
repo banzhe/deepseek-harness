@@ -85,6 +85,12 @@ export interface GroupNode {
    * hidden rows would otherwise show. Always false while the group is expanded.
    */
   running: boolean
+  /**
+   * A folded group holds a visible finished-but-unviewed Session, so the
+   * header's closed-folder icon carries the completion reminder the hidden row
+   * would otherwise show. Always false while the group is expanded.
+   */
+  completedUnread: boolean
   /** Visible session rows (empty while the group is folded). */
   sessions: readonly SessionNode[]
 }
@@ -320,6 +326,25 @@ function groupRunning(
   return sessions.some(s => s.running || runningChildCount(list, s.id, statuses) > 0)
 }
 
+/**
+ * Folded-group completion reminder: an expanded group shows every row's own
+ * done dot, so the header icon reports the reminder only while those rows are
+ * off screen. Subagent children never count — they are absent from the group's
+ * visible members, and the hidden row's reminder is the only fact to carry.
+ * @param sessions - the group's visible member summaries.
+ * @param statuses - unified UI status by Session.
+ * @param expanded - whether the group's rows are on screen.
+ * @returns whether the folded group holds a finished-but-unviewed Session.
+ */
+function groupCompletedUnread(
+  sessions: readonly SessionSummary[],
+  statuses: SessionStatuses,
+  expanded: boolean,
+): boolean {
+  if (expanded) return false
+  return sessions.some(s => statuses.get(s.id)?.completionUnread === true)
+}
+
 /** Build one group without projecting session lineage into presentation. */
 function buildGroup(
   key: string,
@@ -484,6 +509,7 @@ export function deriveGroups(
       expanded,
       containsCurrent: g.key === currentGroup,
       running: groupRunning(g.sessions, list, statuses, expanded),
+      completedUnread: groupCompletedUnread(g.sessions, statuses, expanded),
       sessions: expanded
         ? sectionMembers(g.sessions, pinned, archived)
           .map(session => sessionNode(session, list, statuses, pinned, archived))

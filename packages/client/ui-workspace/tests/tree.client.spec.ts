@@ -534,6 +534,32 @@ describe('deriveGroups', () => {
     )[0]!.running).toBe(false)
   })
 
+  it('reports the folded group completion reminder and clears it while the rows are on screen', () => {
+    const unread = summary('unread', 5)
+    const quiet = summary('quiet', 4)
+    const sessions = list(unread, quiet)
+    const attention: SessionStatusSnapshot = new Map([
+      [unread.id, status(undefined, { completionUnread: true })],
+    ])
+
+    // Folded: the hidden done row surfaces through the group fact.
+    const folded = deriveGroups(
+      sessions, [workspace('project', ['unread', 'quiet'])], noRows, attention, view(),
+    )
+    expect(folded[0]!.completedUnread).toBe(true)
+    // A status entry alone is not presence: the Session must be a visible member.
+    const outside: SessionStatusSnapshot = new Map([
+      [sid('elsewhere'), status(undefined, { completionUnread: true })],
+    ])
+    expect(deriveGroups(
+      sessions, [workspace('project', ['unread', 'quiet'])], noRows, outside, view(),
+    )[0]!.completedUnread).toBe(false)
+    // Expanded: every row carries its own done dot, so the group fact clears.
+    expect(deriveGroups(
+      sessions, [workspace('project', ['unread', 'quiet'])], noRows, attention, view(['project']),
+    )[0]!.completedUnread).toBe(false)
+  })
+
   it('marks selected Workspace and Ungrouped sessions without relying on an Intent', () => {
     const owned = summary('owned', 1)
     const loose = summary('loose', 2)

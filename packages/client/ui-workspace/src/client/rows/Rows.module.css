@@ -151,7 +151,8 @@
 }
 
 /* Executing badge: the sidebar fill keeps the disc opaque so the folder
-   outline and the row's hover fill never read through the animated dot. */
+   outline and the row's hover fill never read through the animated dot. The
+   same disc seats the folded group's completion reminder (done state). */
 .folderActivity {
   position: absolute;
   right: -2px;
