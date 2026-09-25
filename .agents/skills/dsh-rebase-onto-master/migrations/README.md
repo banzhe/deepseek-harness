@@ -36,13 +36,15 @@ Commit ids are deliberately absent. A rebase replaces every one of them, and `ve
 
 ## Compatibility with this machine
 
-| Item | Required by | This machine | Result |
-|---|---|---|---|
-| `node` `^22.19 \|\| >=24` | repository engines | `v0.0.0` | compatible |
-| `<tool>` | `<script>` | missing | actionable |
-| `<NAME>` | `<config>` | absent | actionable |
+Record what another machine must satisfy, never this host's own paths, versions, or local state: those are private to a checkout, and the document is committed. Report each row as `compatible`, `actionable`, or `blocked`.
 
-<For every actionable or blocked row, the exact command or edit that resolves it.>
+| Item | Required by | Result |
+|---|---|---|
+| `node` `^22.19 \|\| >=24` | repository engines | compatible |
+| `<tool>` | `<script>` | actionable, optional |
+| `<NAME>` | `<config>` | actionable |
+
+<For every actionable or blocked row, the exact command or edit that resolves it. Name a credential, never its value.>
 
 ## Steps on another machine
 
@@ -62,6 +64,7 @@ Commit ids are deliberately absent. A rebase replaces every one of them, and `ve
 
 - Never write a commit hash. `verify-repository-references` rejects it in maintained files, and a rebase invalidates it anyway; name the version and the commit subject instead.
 - Names, never values: record the environment variable and the credential it needs, never the secret.
+- Never write this host's private detail: absolute checkout paths, home directory contents, installed tool versions, credential store locations, and whether a shortcut or checkouts currently exist. Record the requirement, not the observation, so the committed document survives being read outside this machine.
 - Cite paths a reader can open, and commands a reader can run.
 - Keep the document tracked. A migration document on a gitignored path migrates nothing.
 - The DSH home directory, the profile, the shortcut, and the taskbar pin live outside the repository. A migration document states the steps for them; it never edits another machine's copy.

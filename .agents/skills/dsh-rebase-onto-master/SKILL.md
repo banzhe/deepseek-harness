@@ -136,9 +136,9 @@ Check, at minimum:
 - **Environment variables** — names the branch reads, reported as present or absent. Never read, copy, or commit a value; `.env` is gitignored, so a name that lives only there is a per-machine step.
 - **Deleted and renamed paths** — search the DSH profile, `settings.yaml`, and root scripts for the removed path. A surviving reference is blocked until its owner fixes it.
 - **State outside git** — a shortcut, a pinned taskbar entry, and profile `link:` targets all survive a pull and keep pointing at the old target.
-- **Absolute paths** — a profile linking `D:/personal/...` is per-machine and cannot migrate by pulling.
+- **Absolute paths** — a profile linking an absolute checkout path is per-machine and cannot migrate by pulling.
 
-Report the findings before rewriting history. Never edit another machine's DSH home; write the step into the migration document instead.
+Report the findings before rewriting history. Never edit another machine's DSH home; write the step into the migration document instead. These are local observations, not document content: the compatibility section records what another machine must satisfy and never this host's paths, versions, credential store, or current state.
 
 ## Write the migration document
 
