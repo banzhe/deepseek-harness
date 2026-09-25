@@ -3,7 +3,7 @@
 import { realpathSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { runtimeArchivePath } from './office-engine.ts'
+import { runtimeArchivePath, windowsOfficeAlias } from './office-engine.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import * as officeSkills from '@deepseek-ai/dsh-skill-office'
 import * as workspaceDependencies from '@deepseek-ai/dsh-tool-workspace-dependencies'
@@ -33,6 +33,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   await ctx.plugin(officeSkills, {
     assetRoot: join(dirname(config.source), 'office-skills'),
     node: join(config.source, 'dependencies', 'node', 'bin', process.platform === 'win32' ? 'node.exe' : 'node'),
-    cli: join(packageRoot, 'lib', 'cli.js'),
+    // A model-driven child process has no module hooks, so Windows reaches the shortened engine
+    // through the published alias entry; elsewhere the installed CLI already fits.
+    cli: windowsOfficeAlias(config.runtimeDir) ?? join(packageRoot, 'lib', 'cli.js'),
   })
 }
