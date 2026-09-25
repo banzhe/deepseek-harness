@@ -1,8 +1,15 @@
 /** Resolve packaged Office engine manifests from their complete, unpacked resource directories. */
+import { execFileSync } from 'node:child_process'
 import { registerHooks, type ModuleHooks } from 'node:module'
 import { realpathSync } from 'node:fs'
 import { basename, dirname, join, relative } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+
+/**
+ * Longest unpacked engine root whose `file:///` resource URLs stay inside the
+ * Windows 260-character path limit. Longer roots use a junction.
+ */
+const WINDOWS_ENGINE_LINK_BUDGET = 180
 
 /**
  * Locate the archive containing a packaged runtime.
@@ -12,6 +19,24 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 export function runtimeArchivePath(runtimeDir: string): string | undefined {
   const parent = dirname(runtimeDir)
   return basename(parent) === 'app.asar' ? parent : undefined
+}
+
+/**
+ * Point one unpacked engine package at a short junction when its own path is too long for LibreOffice.
+ * @param engineDir - Physical unpacked engine package directory.
+ * @returns The directory the helper can stat, or the original directory when it already fits.
+ */
+export function shortenWindowsOfficeEngine(engineDir: string): string {
+  if (process.platform !== 'win32' || engineDir.length <= WINDOWS_ENGINE_LINK_BUDGET) return engineDir
+  const link = join(process.env.LOCALAPPDATA ?? process.env.TEMP ?? dirname(engineDir), 'dsh-libreoffice-kit')
+  try {
+    execFileSync('cmd.exe', ['/d', '/c', 'rmdir', link], { stdio: 'ignore', windowsHide: true })
+  } catch {
+    // The junction is absent on the first launch.
+  }
+  execFileSync('cmd.exe', ['/d', '/c', 'mklink', '/J', link, engineDir], { stdio: 'ignore', windowsHide: true })
+  // realpath expands the junction back past the Windows path limit, so the helper must keep this path.
+  return link
 }
 
 /**
@@ -38,7 +63,9 @@ export function installOfficeEngineResolution(runtimeDir: string): ModuleHooks |
         return resolved
       }
       const physical = realpathSync(fileURLToPath(destination + canonical.slice(source.length)))
-      return { ...resolved, url: pathToFileURL(physical).href }
+      const manifest = basename(physical) === 'package.json'
+      const engineDir = shortenWindowsOfficeEngine(manifest ? dirname(physical) : physical)
+      return { ...resolved, url: pathToFileURL(manifest ? join(engineDir, 'package.json') : engineDir).href }
     },
   })
 }

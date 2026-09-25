@@ -3,7 +3,7 @@ import { createRequire, type ModuleHooks } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import { installOfficeEngineResolution } from '../src/office-engine.ts'
+import { installOfficeEngineResolution, shortenWindowsOfficeEngine } from '../src/office-engine.ts'
 
 const roots: string[] = []
 const hooks: ModuleHooks[] = []
@@ -75,6 +75,32 @@ it('rejects an engine resolved elsewhere inside the archive', () => {
   const require = createRequire(join(f.root, 'app.asar', 'other', 'package.json'))
   expect(() => { require('@deepseek-ai/libreoffice-kit-darwin-arm64/package.json') })
     .toThrow('outside the runtime package directory')
+})
+
+it('keeps a short Windows engine path and rejects a junction that cannot be created', () => {
+  const root = mkdtempSync(join(tmpdir(), 'desktop-office-short-'))
+  roots.push(root)
+  const engine = join(root, 'engine')
+  mkdirSync(engine)
+  expect(shortenWindowsOfficeEngine(engine)).toBe(engine)
+  if (process.platform !== 'win32') return
+  const previous = process.env.LOCALAPPDATA
+  const home = join(root, 'local')
+  mkdirSync(home)
+  process.env.LOCALAPPDATA = home
+  try {
+    const long = join(root, 'x'.repeat(160))
+    mkdirSync(long)
+    expect(shortenWindowsOfficeEngine(long)).toBe(join(home, 'dsh-libreoffice-kit'))
+    expect(realpathSync(join(home, 'dsh-libreoffice-kit'))).toBe(realpathSync(long))
+    const blocked = join(root, 'not-a-directory')
+    writeFileSync(blocked, 'occupied')
+    process.env.LOCALAPPDATA = blocked
+    expect(() => { shortenWindowsOfficeEngine(long) }).toThrow()
+  } finally {
+    if (previous === undefined) delete process.env.LOCALAPPDATA
+    else process.env.LOCALAPPDATA = previous
+  }
 })
 
 it('leaves external engines and the archived WASM engine at their own locations', () => {
