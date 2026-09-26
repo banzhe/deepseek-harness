@@ -54,6 +54,9 @@ function createProductApi(): DshDesktopProductApi {
         return () => { ipcRenderer.off(DESKTOP_IPC.updatesPresentation, handle) }
       },
     },
+    window: {
+      reveal: () => ipcRenderer.invoke(DESKTOP_IPC.windowReveal) as Promise<void>,
+    },
   }
 }
 

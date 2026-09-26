@@ -1161,6 +1161,34 @@ describe('desktop main startup', () => {
     expect(window.show).toHaveBeenCalledOnce()
   })
 
+  it('raises an existing window for a renderer reveal, without a second launch', async () => {
+    await readyWorkspace()
+    const window = harness.windows[0]!
+    // A notification click reaches a hidden or minimized window: a renderer
+    // cannot undo either state itself, so the shell must.
+    window.visible = false
+    window.minimized = true
+    window.show.mockClear()
+    window.focus.mockClear()
+    await invoke(DESKTOP_IPC.windowReveal, 'app')
+    expect(window.restore).toHaveBeenCalledOnce()
+    expect(window.show).toHaveBeenCalledOnce()
+    expect(window.focus).toHaveBeenCalledOnce()
+    expect(harness.windows).toHaveLength(1)
+  })
+
+  it('never starts the application for a reveal, and refuses an unowned sender', async () => {
+    await readyWorkspace()
+    const window = harness.windows[0]!
+    window.destroy()
+    // The sender guard requires the live primary window, so a click on a
+    // notification left over from a previous run cannot launch the shell; the
+    // rebuilt-window branch of focusPrimaryWindow stays unreachable from IPC.
+    expect(() => invoke(DESKTOP_IPC.windowReveal, 'app')).toThrow('dsh desktop: rejected IPC from an unowned renderer')
+    expect(() => invoke(DESKTOP_IPC.windowReveal, 'shell')).toThrow('dsh desktop: rejected IPC from an unowned renderer')
+    expect(harness.windows).toHaveLength(1)
+  })
+
   it('skips the confirmation during a macOS shutdown but asks again once a cancelled shutdown returns focus', async () => {
     vi.stubGlobal('process', { ...process, platform: 'darwin', arch: 'arm64', resourcesPath: 'desktop-test-resources' })
     const host = await readyWorkspace()

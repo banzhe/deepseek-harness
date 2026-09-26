@@ -743,6 +743,13 @@ async function main(): Promise<void> {
     assertProductSender(event)
     await openUpdatePrompt()
   })
+  // A renderer cannot raise its own window: Chromium asks the browser layer, which
+  // Electron does not implement. A notification click that switched the Session
+  // would otherwise happen behind whichever application is in front.
+  ipcMain.handle(DESKTOP_IPC.windowReveal, (event) => {
+    assertProductSender(event)
+    focusPrimaryWindow()
+  })
 
   let promptOperation: Promise<void> | undefined
   let policyAuthenticationQueued = false
