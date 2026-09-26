@@ -701,4 +701,26 @@ describe('launchDetachedApp', () => {
     }
     expect(JSON.parse(await readFile(witness, 'utf8'))).toEqual([null, 'overridden', '1'])
   })
+
+  it('drops the inherited Electron Node-mode selector unless the adapter declares it', async () => {
+    const root = await tempRoot()
+    const probe = 'require("node:fs").writeFileSync(process.argv[1], '
+      + 'String(process.env.ELECTRON_RUN_AS_NODE ?? null))'
+    // The Desktop Host sets this selector for its own Node-mode startup and the
+    // subprocess scrub keeps it, so an inherited value reaches this launcher.
+    process.env.ELECTRON_RUN_AS_NODE = '1'
+    try {
+      const inherited = join(root, 'inherited.txt')
+      await launchDetachedApp(node, ['-e', probe, inherited], { watchMs: TIMEOUT_MS })
+      expect(await readFile(inherited, 'utf8')).toBe('null')
+
+      const declared = join(root, 'declared.txt')
+      await launchDetachedApp(node, ['-e', probe, declared], {
+        watchMs: TIMEOUT_MS, env: { ELECTRON_RUN_AS_NODE: '1' },
+      })
+      expect(await readFile(declared, 'utf8')).toBe('1')
+    } finally {
+      delete process.env.ELECTRON_RUN_AS_NODE
+    }
+  })
 })
