@@ -38,16 +38,20 @@ it('exposes onboarding size activation to the application document', async () =>
   expect(electron.ipcRenderer.send.mock.calls).toEqual([[DESKTOP_IPC.onboardingActive, true], [DESKTOP_IPC.onboardingActive, false]])
 })
 
-it('limits product documents to update status and a native confirmation action', async () => {
+it('limits product documents to update status, a native confirmation action, and raising the window', async () => {
   vi.stubGlobal('location', new URL('dsh-app://app/index.html'))
   await import('../src/preload-app.ts')
   const api = electron.contextBridge.exposeInMainWorld.mock.calls.find(([name]) => name === 'dshDesktop')?.[1] as DshDesktopProductApi
   await api.updates.status()
   await api.updates.open()
-  expect(electron.ipcRenderer.invoke.mock.calls).toEqual([[DESKTOP_IPC.updatesStatus], [DESKTOP_IPC.updatesOpen]])
+  await api.window.reveal()
+  expect(electron.ipcRenderer.invoke.mock.calls).toEqual([
+    [DESKTOP_IPC.updatesStatus], [DESKTOP_IPC.updatesOpen], [DESKTOP_IPC.windowReveal],
+  ])
   expect(api).not.toHaveProperty('plugins')
   expect(api).not.toHaveProperty('backend')
   expect(api.updates).not.toHaveProperty('install')
+  expect(api.window).not.toHaveProperty('close')
   const listener = vi.fn()
   const dispose = api.updates.subscribe(listener)
   const handler = electron.ipcRenderer.on.mock.calls.find(([channel]) => channel === DESKTOP_IPC.updatesPresentation)?.[1] as
@@ -56,6 +60,27 @@ it('limits product documents to update status and a native confirmation action',
   expect(listener).toHaveBeenCalledWith({ visible: false })
   dispose()
   expect(electron.ipcRenderer.off).toHaveBeenCalledWith(DESKTOP_IPC.updatesPresentation, handler)
+})
+
+it('exposes notification operations and releases activation subscriptions', async () => {
+  vi.stubGlobal('location', new URL('dsh-app://app/'))
+  await import('../src/preload-app.ts')
+  const api = electron.contextBridge.exposeInMainWorld.mock.calls.find(([name]) => name === 'dshDesktop')?.[1] as DshDesktopProductApi
+  const request = { id: 's1', title: 'Title', body: 'Body' }
+  electron.ipcRenderer.invoke.mockResolvedValueOnce(true)
+  await expect(api.notifications.show(request)).resolves.toBe(true)
+  electron.ipcRenderer.invoke.mockResolvedValueOnce(undefined)
+  await api.notifications.close('s1')
+  expect(electron.ipcRenderer.invoke).toHaveBeenCalledWith(DESKTOP_IPC.notificationsShow, request)
+  expect(electron.ipcRenderer.invoke).toHaveBeenCalledWith(DESKTOP_IPC.notificationsClose, 's1')
+  const listener = vi.fn()
+  const disposeActivation = api.notifications.onActivate(listener)
+  const handler = electron.ipcRenderer.on.mock.calls.find(([channel]) => channel === DESKTOP_IPC.notificationsActivate)?.[1] as
+    (event: unknown, activation: { id?: string }) => void
+  handler({}, { id: 's1' })
+  expect(listener).toHaveBeenCalledWith({ id: 's1' })
+  disposeActivation()
+  expect(electron.ipcRenderer.off).toHaveBeenCalledWith(DESKTOP_IPC.notificationsActivate, handler)
 })
 
 it.each(['dsh-app://shell/plugin-manager.html', 'dsh-app://other/index.html', 'https://shell/startup.html', 'http://example.com/'])('exposes only the carrier marker to %s', async (url) => {

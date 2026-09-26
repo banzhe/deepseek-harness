@@ -177,6 +177,7 @@ const harness = await vi.hoisted(async () => {
     setAppLogsPath: vi.fn(),
     getPath: vi.fn<(name: string) => string>(),
     setAboutPanelOptions: vi.fn<(options: Electron.AboutPanelOptionsOptions) => void>(),
+    setAppUserModelId: vi.fn<(id: string) => void>(),
     requestSingleInstanceLock: () => true,
     setAsDefaultProtocolClient: vi.fn(),
     exit: vi.fn(),
@@ -301,6 +302,13 @@ vi.mock('electron', () => ({
   shell: { openExternal: harness.openExternal },
   nativeTheme: harness.nativeTheme,
   net: { fetch: vi.fn() },
+  // Renderer notifications ride the shell's toast router; the harness never
+  // displays one at module scope, so the constructor only needs to exist.
+  Notification: Object.assign(vi.fn(function (this: { on(channel: string, listener: () => void): void; show(): void },
+    _options: unknown) {
+    this.on = vi.fn()
+    this.show = vi.fn()
+  }), { isSupported: vi.fn(() => true) }),
   ipcMain: {
     on: harness.ipcOn,
     handle: (channel: string, handler: InvokeHandler) => {
@@ -323,6 +331,19 @@ vi.mock('../src/background-notice.ts', () => ({ DesktopBackgroundNotice: class {
   readonly close = harness.backgroundNotice.close
   readonly dispose = harness.backgroundNotice.dispose
 } }))
+vi.mock('node:fs', async (importOriginal) => {
+  const original = await importOriginal<typeof import('node:fs')>()
+  return { ...original, readFileSync: vi.fn((path: Parameters<typeof original.readFileSync>[0], ...rest: unknown[]) => {
+    if (path === join('desktop-test-app', 'package.json')) {
+      // Only a packaged application embeds the release app id in its manifest.
+      return JSON.stringify(harness.app.isPackaged
+        ? { dshDesktopAppId: 'com.deepseek.dsh', dshMandatoryUpdatePolicy: harness.embeddedPolicy }
+        : {})
+    }
+    // @ts-expect-error -- pass through with the original's variadic signature.
+    return original.readFileSync(path, ...rest)
+  }) }
+})
 vi.mock('node:fs/promises', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:fs/promises')>()
   return { ...original, readFile: vi.fn((path: Parameters<typeof original.readFile>[0], encoding?: 'utf8') => {
@@ -1231,7 +1252,7 @@ describe('desktop main startup', () => {
       expect(window.show.mock.invocationCallOrder[0]).toBeLessThan(window.moveTop.mock.invocationCallOrder[0]!)
     }
     window.destroy()
-    harness.app.emit('second-instance')
+    harness.app.emit('second-instance', {}, [])
     const replacement = harness.windows[1]!
     await replacement.shown.promise
     expect(replacement.show).toHaveBeenCalledOnce()
@@ -1272,7 +1293,7 @@ describe('desktop main startup', () => {
     expect(harness.dialog.showMessageBox).not.toHaveBeenCalled()
     expect(window.hide).toHaveBeenCalledOnce()
     await host.stopping.promise
-    harness.app.emit('second-instance')
+    harness.app.emit('second-instance', {}, [])
     expect(window.show).not.toHaveBeenCalled()
     expect(window.focus).not.toHaveBeenCalled()
     host.exited.resolve()
@@ -1296,7 +1317,7 @@ describe('desktop main startup', () => {
     harness.trays[0]!.emit('click')
     expect(window.show).toHaveBeenCalledOnce()
     expect(window.focus).toHaveBeenCalled()
-    harness.app.emit('second-instance')
+    harness.app.emit('second-instance', {}, [])
     expect(window.show).toHaveBeenCalledTimes(2)
     // Locale changes relabel the tray together with the application menu.
     const relabels = harness.trays[0]!.setContextMenu.mock.calls.length
@@ -1363,6 +1384,81 @@ describe('desktop main startup', () => {
     expect(window.show).toHaveBeenCalledOnce()
     harness.app.emit('activate', {}, true)
     expect(window.show).toHaveBeenCalledOnce()
+  })
+
+  it('raises an existing window for a renderer reveal, without a second launch', async () => {
+    await readyWorkspace()
+    const window = harness.windows[0]!
+    // A notification click reaches a hidden or minimized window: a renderer
+    // cannot undo either state itself, so the shell must.
+    window.visible = false
+    window.minimized = true
+    window.show.mockClear()
+    window.focus.mockClear()
+    await invoke(DESKTOP_IPC.windowReveal, 'app')
+    expect(window.restore).toHaveBeenCalledOnce()
+    expect(window.show).toHaveBeenCalledOnce()
+    expect(window.focus).toHaveBeenCalledOnce()
+    expect(harness.windows).toHaveLength(1)
+  })
+
+  it('never starts the application for a reveal, and refuses an unowned sender', async () => {
+    await readyWorkspace()
+    const window = harness.windows[0]!
+    window.destroy()
+    // The sender guard requires the live primary window, so a click on a
+    // notification left over from a previous run cannot launch the shell; the
+    // rebuilt-window branch of focusPrimaryWindow stays unreachable from IPC.
+    expect(() => invoke(DESKTOP_IPC.windowReveal, 'app')).toThrow('dsh desktop: rejected IPC from an unowned renderer')
+    expect(() => invoke(DESKTOP_IPC.windowReveal, 'shell')).toThrow('dsh desktop: rejected IPC from an unowned renderer')
+    expect(harness.windows).toHaveLength(1)
+  })
+
+  it('sets the packaged AppUserModelID at startup on Windows and macOS', async () => {
+    await readyForUpdate()
+    expect(harness.app.setAppUserModelId).toHaveBeenCalledWith('com.deepseek.dsh')
+  })
+
+  it('derives a development AppUserModelID when the manifest carries none', async () => {
+    harness.app.isPackaged = false
+    await readyForUpdate()
+    expect(harness.app.setAppUserModelId).toHaveBeenCalledWith(`com.deepseek-ai.dsh-desktop.${harness.app.name}`)
+  })
+
+  it('routes a renderer notification show request into the shell toast and rejects invalid payloads', async () => {
+    await readyWorkspace()
+    expect(invoke(DESKTOP_IPC.notificationsShow, 'app', { id: 's1', title: 'Title', body: 'Body' })).toBe(true)
+    expect(() => invoke(DESKTOP_IPC.notificationsShow, 'app', { id: '', title: 'T', body: '' })).toThrow('desktop notifications: invalid request')
+    expect(() => invoke(DESKTOP_IPC.notificationsShow, 'app', { id: 's2' })).toThrow('desktop notifications: invalid request')
+    expect(() => invoke(DESKTOP_IPC.notificationsShow, 'shell', { id: 's3', title: 'T', body: '' })).toThrow('dsh desktop: rejected IPC from an unowned renderer')
+    expect(invoke(DESKTOP_IPC.notificationsClose, 'app', 's1')).toBeUndefined()
+    expect(() => invoke(DESKTOP_IPC.notificationsClose, 'app', '')).toThrow('desktop notifications: invalid id')
+  })
+
+  it('delivers a notification activation to the renderer and raises the window', async () => {
+    await readyWorkspace()
+    const window = harness.windows[0]!
+    window.show.mockClear()
+    window.focus.mockClear()
+    await invoke(DESKTOP_IPC.notificationsShow, 'app', { id: 's1', title: 'T', body: '' })
+    window.webContents.send.mockClear()
+    harness.app.emit('second-instance', {}, ['dsh://open?notification=s1'])
+    expect(window.show).toHaveBeenCalledOnce()
+    expect(window.focus).toHaveBeenCalledOnce()
+    expect(window.webContents.send).toHaveBeenCalledWith(DESKTOP_IPC.notificationsActivate, { id: 's1' })
+    // A bare refocus launch without a notification argument stays focus-only.
+    window.show.mockClear()
+    window.focus.mockClear()
+    window.webContents.send.mockClear()
+    harness.app.emit('second-instance', {}, [])
+    expect(window.show).toHaveBeenCalledOnce()
+    expect(window.webContents.send).not.toHaveBeenCalled()
+    // An argv entry for a notification the window never showed drops silently.
+    window.show.mockClear()
+    window.focus.mockClear()
+    harness.app.emit('second-instance', {}, ['dsh://open?notification=from-previous-run'])
+    expect(window.show).toHaveBeenCalledOnce()
+    expect(window.webContents.send).not.toHaveBeenCalled()
   })
 
   it('skips the confirmation during a macOS shutdown but asks again once a cancelled shutdown returns focus', async () => {
