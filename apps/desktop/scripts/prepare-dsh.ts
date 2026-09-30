@@ -154,8 +154,14 @@ async function main(): Promise<void> {
       throw new Error(`desktop runtime: missing required LibreOffice engine ${officeEngine}`)
     }
     if (process.platform === 'darwin') {
-      await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'sign:dsh-native', () => signMacOSRuntime(DSH_OUTPUT_ROOT, resolveDesktopAppId(process.env), resolveMacOSSigningEnvironment(process.env), target.arch, join(BUILD_PATHS.root, 'signature-cache')))
-      await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'sign:primary-native', () => signMacOSRuntime(join(RUNTIME_ROOT, 'primary-runtime'), resolveDesktopAppId(process.env), resolveMacOSSigningEnvironment(process.env), target.arch, join(BUILD_PATHS.root, 'signature-cache')))
+      // A local unsigned build carries no Developer ID, but Apple silicon still refuses to execute an
+      // unsigned Mach-O, so preparation ad-hoc signs the same files and keeps no signature cache.
+      const unsigned = process.env.DSH_DESKTOP_UNSIGNED === '1'
+      const expected = unsigned ? undefined : resolveMacOSSigningEnvironment(process.env)
+      const cache = unsigned ? undefined : join(BUILD_PATHS.root, 'signature-cache')
+      const appId = resolveDesktopAppId(process.env)
+      await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'sign:dsh-native', () => signMacOSRuntime(DSH_OUTPUT_ROOT, appId, expected, target.arch, cache))
+      await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'sign:primary-native', () => signMacOSRuntime(join(RUNTIME_ROOT, 'primary-runtime'), appId, expected, target.arch, cache))
     }
     await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:manifests', () => prepareRuntimeManifests(DSH_OUTPUT_ROOT))
     await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:primary-smoke', async () => smokePrimaryRuntime(join(RUNTIME_ROOT, 'primary-runtime')))

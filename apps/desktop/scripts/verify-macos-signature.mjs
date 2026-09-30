@@ -2,7 +2,7 @@
 
 import { spawn, spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
-import { resolveMacOSSigningEnvironment } from './desktop-release-environment.mjs'
+import { AD_HOC_SIGNING_IDENTITY, resolveMacOSSigningEnvironment } from './desktop-release-environment.mjs'
 import { loadDesktopPackageEnvironment } from './desktop-package-environment.mjs'
 
 /**
@@ -139,6 +139,24 @@ export function verifyMacOSRuntimeCode(path, expected) {
   runCodeSign(['--verify', '--strict', '--verbose=2', path])
   const details = runCodeSign(['--display', '--verbose=4', path])
   assertMacOSRuntimeSignatureDetails(details, expected)
+}
+
+/**
+ * Ad-hoc sign one Mach-O file for a local build that carries no Developer ID and no notarization.
+ * The signature contains no certificate, so no keychain, Team ID, or secure timestamp is involved.
+ * @param {string} path - Writable standalone Mach-O file.
+ * @param {string} identifier - Stable code-signing identifier derived from the release app ID and runtime path.
+ * @param {string | undefined} entitlements - Optional entitlement plist for this executable.
+ * @returns {Promise<void>} Resolves after codesign exits successfully.
+ */
+export async function signMacOSRuntimeCodeAdHoc(path, identifier, entitlements) {
+  await runAppleCommandAsync('/usr/bin/codesign', [
+    '--force',
+    '--sign', AD_HOC_SIGNING_IDENTITY,
+    '--identifier', identifier,
+    ...(entitlements === undefined ? [] : ['--entitlements', entitlements]),
+    path,
+  ], 'codesign')
 }
 
 /**

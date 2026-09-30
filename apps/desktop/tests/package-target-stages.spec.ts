@@ -102,6 +102,20 @@ it.each(['--unsigned', '--prepare-only'])('keeps %s hardware-free and creates no
   expect(stages.includes('exec tsx scripts/smoke-packaged-runtime.ts --unsigned')).toBe(mode === '--unsigned')
 })
 
+it('keeps an unsigned macOS build in the ad-hoc lane without notarization or a release record', async () => {
+  const { run, stages } = supervisor()
+  await packageTarget(parseDesktopPackageInvocation(['mac-arm64', '--unsigned'], 'darwin', 'arm64'), environment, run)
+  expect(stages.at(-1)).toBe('exec tsx scripts/smoke-packaged-runtime.ts --unsigned')
+  expect(stages).toContain('exec electron-builder --config electron-builder.config.mjs --mac --arm64 --publish never')
+  expect(withMacOSNotarizationProxy).not.toHaveBeenCalled()
+  expect(packageMacOSArtifacts).not.toHaveBeenCalled()
+  expect(writeFileSync).not.toHaveBeenCalled()
+  // Runtime preparation reads this variable to ad-hoc sign the bundled Mach-O files.
+  const preparation = run.run.mock.calls.filter(call => call[0].startsWith('run prepare:'))
+  expect(preparation.map(call => call[0])).toContain('run prepare:dsh')
+  for (const call of preparation) expect(call[3].env.DSH_DESKTOP_UNSIGNED).toBe('1')
+})
+
 it('checks the assembled macOS runtime before notarizing and recording the release', async () => {
   const { run, stages } = supervisor()
   vi.mocked(packageMacOSArtifacts).mockImplementationOnce(async () => {

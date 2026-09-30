@@ -10,6 +10,9 @@ export const MACOS_TEAM_ID_ENV: 'DSH_DESKTOP_MACOS_TEAM_ID'
 /** Environment variable that selects the npm registry used for the bundled runtime install. */
 export const NPM_REGISTRY_ENV: 'DSH_DESKTOP_NPM_REGISTRY'
 
+/** Certificate qualifier that asks codesign for an ad-hoc signature instead of a Developer ID. */
+export const AD_HOC_SIGNING_IDENTITY: '-'
+
 /** Public identity expected on a macOS release. */
 export interface MacOSSigningEnvironment {
   readonly signingIdentity: string

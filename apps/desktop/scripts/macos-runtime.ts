@@ -7,7 +7,7 @@ import { inventoryDesktopRuntime } from '../src/runtime-tree.ts'
 import type { MacOSSigningEnvironment } from './desktop-release-environment.mjs'
 import { cachedMacOSSignature, pruneMacOSSignatureCache } from './macos-signature-cache.ts'
 import { macOSCachePolicy } from './macos-cache-policy.ts'
-import { signMacOSRuntimeCode, verifyMacOSRuntimeCode } from './verify-macos-signature.mjs'
+import { signMacOSRuntimeCode, signMacOSRuntimeCodeAdHoc, verifyMacOSRuntimeCode } from './verify-macos-signature.mjs'
 
 const MACH_O_MAGICS = new Set(['cafebabe', 'cafebabf', 'cefaedfe', 'cffaedfe', 'feedface', 'feedfacf', 'bebafeca', 'bfbafeca'])
 
@@ -23,13 +23,13 @@ function magic(path: string): string {
  * Sign and verify every materialized Mach-O file, awaiting all signers on failure.
  * @param root - Self-contained production runtime without symlinks.
  * @param appId - Release application identifier.
- * @param expected - Required signing identity.
+ * @param expected - Required signing identity, or undefined to ad-hoc sign a local unsigned build.
  * @param arch - Target runtime architecture, independent of the signing host.
  * @param cacheDirectory - Optional content-addressed cache; requires the keychain-owned signing probe.
  * @returns Number of signed native files.
  */
 export async function signMacOSRuntime(
-  root: string, appId: string, expected: MacOSSigningEnvironment, arch: 'arm64' | 'x64', cacheDirectory?: string,
+  root: string, appId: string, expected: MacOSSigningEnvironment | undefined, arch: 'arm64' | 'x64', cacheDirectory?: string,
 ): Promise<number> {
   const files = inventoryDesktopRuntime(root).map(file => file.path).filter(path => MACH_O_MAGICS.has(magic(join(root, path))))
   const policy = cacheDirectory === undefined ? undefined : macOSCachePolicy(process.env.DSH_DESKTOP_MACOS_SIGNING_PROBE ?? '')
@@ -49,12 +49,16 @@ export async function signMacOSRuntime(
       const entitlements = needsJit ? join(import.meta.dirname, entitlementsFile) : undefined
       const file = join(root, path)
       const thin = ['cefaedfe', 'cffaedfe', 'feedface', 'feedfacf'].includes(magic(file))
-      if (cacheDirectory !== undefined && policy !== undefined && thin) {
-        if (await cachedMacOSSignature(file, cacheDirectory, policy(identifier, expected, entitlements))) hits++
+      const identity = expected
+      // An unsigned build has no release identity: ad-hoc sign only, and verify nothing.
+      if (identity === undefined) {
+        await signMacOSRuntimeCodeAdHoc(file, identifier, entitlements)
+      } else if (cacheDirectory !== undefined && policy !== undefined && thin) {
+        if (await cachedMacOSSignature(file, cacheDirectory, policy(identifier, identity, entitlements))) hits++
         else misses++
       } else {
-        await signMacOSRuntimeCode(file, identifier, expected, entitlements)
-        verifyMacOSRuntimeCode(file, expected)
+        await signMacOSRuntimeCode(file, identifier, identity, entitlements)
+        verifyMacOSRuntimeCode(file, identity)
       }
     }
   })

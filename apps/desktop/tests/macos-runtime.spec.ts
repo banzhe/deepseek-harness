@@ -3,9 +3,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { signMacOSRuntime } from '../scripts/macos-runtime.ts'
-import { signMacOSRuntimeCode, verifyMacOSRuntimeCode } from '../scripts/verify-macos-signature.mjs'
+import {
+  signMacOSRuntimeCode,
+  signMacOSRuntimeCodeAdHoc,
+  verifyMacOSRuntimeCode,
+} from '../scripts/verify-macos-signature.mjs'
 
-vi.mock('../scripts/verify-macos-signature.mjs', () => ({ signMacOSRuntimeCode: vi.fn(), verifyMacOSRuntimeCode: vi.fn() }))
+vi.mock('../scripts/verify-macos-signature.mjs', () => ({
+  signMacOSRuntimeCode: vi.fn(), verifyMacOSRuntimeCode: vi.fn(), signMacOSRuntimeCodeAdHoc: vi.fn(),
+}))
 const roots: string[] = []
 function root(): string {
   const path = mkdtempSync(join(tmpdir(), 'desktop-signing-'))
@@ -45,6 +51,21 @@ it('awaits other signers before rejecting and permitting output cleanup', async 
   } finally { release() }
   expect(await result).toBeInstanceOf(AggregateError)
   expect(verifyMacOSRuntimeCode).toHaveBeenCalledWith(join(path, 'b.node'), identity)
+})
+
+it('ad-hoc signs every Mach-O file and verifies nothing for a local unsigned build', async () => {
+  const path = root()
+  mkdirSync(join(path, 'dependencies/node/bin'), { recursive: true })
+  const node = join(path, 'dependencies/node/bin/node')
+  const addon = join(path, 'addon.node')
+  for (const file of [node, addon]) writeFileSync(file, Buffer.from('cffaedfe00000000', 'hex'))
+  writeFileSync(join(path, 'source.js'), 'export {}')
+  await expect(signMacOSRuntime(path, 'com.example.app', undefined, 'arm64')).resolves.toBe(2)
+  const identifier = /^com\.example\.app\.runtime\.[a-f0-9]{64}$/u
+  expect(signMacOSRuntimeCodeAdHoc).toHaveBeenCalledWith(node, expect.stringMatching(identifier), join(import.meta.dirname, '../scripts/jit-entitlements.plist'))
+  expect(signMacOSRuntimeCodeAdHoc).toHaveBeenCalledWith(addon, expect.stringMatching(identifier), undefined)
+  expect(signMacOSRuntimeCode).not.toHaveBeenCalled()
+  expect(verifyMacOSRuntimeCode).not.toHaveBeenCalled()
 })
 
 it.each(['arm64', 'x64'] as const)('selects %s Node entitlements and keeps helpers JIT-only', async (arch) => {
