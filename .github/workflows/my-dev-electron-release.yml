@@ -1,0 +1,141 @@
+name: my_dev unsigned Electron release
+
+on:
+  workflow_dispatch:
+    inputs:
+      policy_origin:
+        description: 'Mandatory-update HTTPS origin with no path (placeholder is fine for a personal unsigned build)'
+        type: string
+        default: https://my-dev.invalid
+        required: true
+      login_origins:
+        description: 'Comma-separated login origins for the Windows build; defaults to the policy origin'
+        type: string
+        required: false
+  push:
+    branches: [my_dev]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: my-dev-electron-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # GitHub Releases are per-tag, and both platforms derive the same version from one
+  # checkout, so each job checks whether its release exists and reuses it otherwise.
+  release-windows:
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/my_dev'
+    runs-on: windows-latest
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DSH_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+          clean: true
+      - uses: pnpm/action-setup@v5.0.0
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm-${{ github.run_id }}-${{ github.run_attempt }}
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: '24'
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Prepare unsigned Windows package settings
+        id: settings
+        env:
+          PACKAGE_POLICY_ORIGIN: ${{ github.event_name == 'workflow_dispatch' && inputs.policy_origin || 'https://my-dev.invalid' }}
+          PACKAGE_LOGIN_ORIGINS: ${{ github.event_name == 'workflow_dispatch' && inputs.login_origins || '' }}
+        run: node .github/workflows/prepare-my-dev-windows.mjs
+      - name: Build unsigned Windows installer
+        env:
+          PACKAGE_VERSION: ${{ steps.settings.outputs.version }}
+          DSH_DESKTOP_GITHUB_RELEASE_FEED: '1'
+          DSH_DESKTOP_GITHUB_REPOSITORY: ${{ github.repository }}
+        run: pnpm run package:desktop:win:x64:unsigned --build-version "$env:PACKAGE_VERSION"
+      - name: Point update metadata at GitHub Releases
+        env:
+          RELEASE_REPOSITORY: ${{ github.repository }}
+        run: |
+          $metadata = Get-Item "apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/nightly.yml"
+          node --input-type=module -e "import { readFileSync, writeFileSync } from 'node:fs'; import { githubReleaseMetadata } from './.github/workflows/prepare-my-dev-windows.mjs'; const path = process.argv[1]; writeFileSync(path, githubReleaseMetadata(readFileSync(path, 'utf8'), process.env.RELEASE_REPOSITORY))" $metadata.FullName
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE_VERSION: ${{ steps.settings.outputs.version }}
+        run: |
+          if (gh release view $env:PACKAGE_VERSION --repo $env:GITHUB_REPOSITORY > $null 2>&1) {
+            Write-Host "Release $env:PACKAGE_VERSION exists; uploading this installer into it"
+          } else {
+            gh release create $env:PACKAGE_VERSION `
+              --repo $env:GITHUB_REPOSITORY `
+              --target $env:GITHUB_SHA `
+              --title $env:PACKAGE_VERSION `
+              --latest `
+              --notes "Unsigned Electron build from my_dev at $($env:GITHUB_SHA). Windows installs update from the latest GitHub Release; install the macOS DMG manually."
+          }
+          gh release upload $env:PACKAGE_VERSION `
+            (Get-Item "apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/*.exe").FullName `
+            (Get-Item "apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/*.exe.blockmap").FullName `
+            (Get-Item "apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/nightly.yml").FullName `
+            --repo $env:GITHUB_REPOSITORY --clobber
+      - name: Remove generated package settings
+        if: always()
+        run: |
+          if (Test-Path -LiteralPath apps/desktop/.env.windows) {
+            Remove-Item -LiteralPath apps/desktop/.env.windows
+          }
+
+  release-macos-arm64:
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/my_dev'
+    runs-on: macos-latest
+    timeout-minutes: 180
+    env:
+      DSH_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+          clean: true
+      - uses: pnpm/action-setup@v5.0.0
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm-${{ github.run_id }}-${{ github.run_attempt }}
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: '24'
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Resolve build version
+        id: settings
+        run: node .github/workflows/prepare-my-dev-macos.mjs
+      - name: Build unsigned macOS arm64 DMG
+        env:
+          PACKAGE_VERSION: ${{ steps.settings.outputs.version }}
+        run: pnpm run package:desktop:mac:arm64:unsigned --build-version "$PACKAGE_VERSION"
+      # The Windows job tags builds with the same version format, so the release may already
+      # exist; both platforms' assets then share one release and the last publish wins --latest.
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE_VERSION: ${{ steps.settings.outputs.version }}
+        run: |
+          if gh release view "$PACKAGE_VERSION" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "Release $PACKAGE_VERSION exists; uploading this DMG into it"
+          else
+            gh release create "$PACKAGE_VERSION" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "$PACKAGE_VERSION" \
+              --latest \
+              --notes "Unsigned Electron build from my_dev at $GITHUB_SHA. Windows installs update from the latest GitHub Release; install the macOS DMG manually."
+          fi
+          gh release upload "$PACKAGE_VERSION" \
+            "apps/desktop/.desktop-build/targets/mac-arm64/unsigned-artifacts/deepseek-harness-$PACKAGE_VERSION-mac-arm64-unsigned.dmg" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
