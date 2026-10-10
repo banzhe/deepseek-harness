@@ -1,6 +1,7 @@
 import { officePackageDirectories } from '../../../scripts/libreoffice-packages.mjs'
 import { X509Certificate } from 'node:crypto'
 import { readFileSync } from 'node:fs'
+import { writeFile } from 'node:fs/promises'
 import { readFile } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -35,6 +36,19 @@ import {
 } from './macos-app-update-config.mjs'
 
 /**
+ * Resolve the public GitHub Release directory used by a personal unsigned Windows build.
+ * @param {NodeJS.ProcessEnv} env - Packaging environment.
+ * @returns {string} Feed URL ending in a slash.
+ */
+function githubReleaseUpdateFeed(env) {
+  const repository = env.DSH_DESKTOP_GITHUB_REPOSITORY?.trim()
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(repository ?? '')) {
+    throw new Error('desktop package: DSH_DESKTOP_GITHUB_REPOSITORY must be owner/name for a GitHub Release update feed')
+  }
+  return `https://github.com/${repository}/releases/latest/download/`
+}
+
+/**
  * Create electron-builder configuration from one release environment.
  * @param {NodeJS.ProcessEnv} env - Packaging environment.
  * @param {NodeJS.Platform} hostPlatform - Build-host platform used when no explicit target is present.
@@ -61,6 +75,8 @@ export function createElectronBuilderConfig(
   const packagesMacOS = targetPlatform === 'darwin' || (targetPlatform === undefined && hostPlatform === 'darwin')
   const packagesWindows = resolvedPlatform === 'win32'
   const policy = packagesMacOS && unsigned ? undefined : resolveDesktopPolicyEnvironment(env)
+  const githubReleaseFeed = packagesWindows && unsigned && env.DSH_DESKTOP_GITHUB_RELEASE_FEED === '1'
+    ? githubReleaseUpdateFeed(env) : undefined
   if (resolvedPlatform === 'win32') installWindowsDirectoryInstaller()
   const macOSSigning = packagesMacOS && !unsigned ? resolveMacOSSigningEnvironment(env) : undefined
   if (packagesMacOS && !unsigned) resolveMacOSNotarizationEnvironment(env)
@@ -90,6 +106,9 @@ export function createElectronBuilderConfig(
     installWindowsNsisBootstrapSigner({ sign: windowsSigner })
   }
   const update = unsigned ? undefined : resolveDesktopAutoUpdateConfig(env, resolvedPlatform, resolvedArch)
+  const publish = githubReleaseFeed !== undefined
+    ? [{ provider: 'generic', url: githubReleaseFeed, channel: 'nightly' }]
+    : update === undefined ? null : [{ provider: 'generic', url: update.publicUrl, channel: 'nightly' }]
   if (preparedRuntime !== undefined) buildPaths.dsh = preparedRuntime
   // electron-builder merges extraMetadata into the packaged manifest, so a build version here reaches
   // the artifact names, the update feed, and the installed app.getVersion() the updater compares against.
@@ -194,6 +213,15 @@ export function createElectronBuilderConfig(
         preparedRuntimeVersion ?? productVersion, { platform: resolvedPlatform, arch: resolvedArch })
       // Unsigned Windows builds skip electron-builder's afterSign hook.
       if (packagesWindows && unsigned) await verifyWindowsAsarUnpack(buildPaths.dsh, resourcesDir, windowsCode)
+      if (githubReleaseFeed !== undefined) {
+        await writeFile(join(resourcesDir, 'app-update.yml'), [
+          'provider: generic',
+          `url: ${githubReleaseFeed}`,
+          'channel: nightly',
+          `updaterCacheDirName: ${context.packager.appInfo.updaterCacheDirName}`,
+          '',
+        ].join('\n'))
+      }
     },
     afterSign: async context => {
       if (windowsSigner !== undefined) {
@@ -246,6 +274,6 @@ export function createElectronBuilderConfig(
       differentialPackage: true,
     },
     detectUpdateChannel: false,
-    publish: update === undefined ? null : [{ provider: 'generic', url: update.publicUrl, channel: 'nightly' }],
+    publish,
   }
 }
