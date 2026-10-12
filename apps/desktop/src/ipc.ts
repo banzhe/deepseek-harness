@@ -4,6 +4,14 @@ import type { DesktopKeyboardApi, DesktopShortcutsApi } from '@deepseek-ai/dsh-c
 import type { IpcMainInvokeEvent } from 'electron'
 import type { DesktopBrowserBridge } from '@deepseek-ai/dsh-client-ui-sidebar-browser/types'
 
+/** Activation payload the renderer receives; `id` echoes the clicked notification. */
+export interface DesktopNotificationActivation {
+  readonly id: string | undefined
+}
+
+/** Forwarder one activation subscription installs; carries the echoed payload. */
+export type DesktopNotificationActivationSink = (activation: DesktopNotificationActivation) => void
+
 /** IPC channel names kept private to the desktop application bundle. */
 export const DESKTOP_IPC = {
   shortcutsInput: 'dsh-desktop:shortcuts-input',
@@ -30,6 +38,9 @@ export const DESKTOP_IPC = {
   nativeThemeSet: 'dsh-desktop:native-theme-set',
   windowFullscreen: 'dsh-desktop:window-fullscreen',
   windowReveal: 'dsh-desktop:window-reveal',
+  notificationsShow: 'dsh-desktop:notifications-show',
+  notificationsClose: 'dsh-desktop:notifications-close',
+  notificationsActivate: 'dsh-desktop:notifications-activate',
   windowsAppearance: 'dsh-desktop:windows-appearance',
   windowsMenu: 'dsh-desktop:windows-menu',
 } as const
@@ -87,6 +98,22 @@ export interface DshDesktopProductApi {
   }
   readonly window: {
     reveal(): Promise<void>
+  }
+  readonly notifications: {
+    /**
+     * Display one system notification whose activation returns through
+     * `onActivate` with the same id, from both the banner and the Windows
+     * notification center.
+     * @returns whether the shell accepted the request.
+     */
+    show(request: { readonly id: string; readonly title: string; readonly body: string }): Promise<boolean>
+    /** Retract one displayed notification by its renderer id. */
+    close(id: string): Promise<void>
+    /**
+     * Subscribe to notification activations; the latest subscription wins.
+     * @returns the disposer.
+     */
+    onActivate(listener: (activation: DesktopNotificationActivation) => void): () => void
   }
 }
 

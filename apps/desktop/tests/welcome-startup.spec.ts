@@ -97,6 +97,11 @@ vi.mock('electron', () => ({
   dialog: { showErrorBox: vi.fn(), showMessageBox: vi.fn() },
   Menu: { buildFromTemplate: state.menu, setApplicationMenu: vi.fn() },
   nativeImage: { createFromPath: (path: string) => ({ path }) },
+  // The toast router instantiates at module scope; this suite never raises one.
+  Notification: Object.assign(vi.fn(function (this: { on(channel: string, listener: () => void): void; show(): void }) {
+    this.on = vi.fn()
+    this.show = vi.fn()
+  }), { isSupported: () => true }),
 }))
 // The Windows tray relabels through Menu as well; keep the menu call counts below platform-neutral.
 vi.mock('../src/tray.ts', () => ({ DesktopTray: class { relabel() {} dispose() {} } }))
@@ -196,7 +201,7 @@ it.each([false, true])('starts welcome onboarding without carrying update focus 
   state.beforeRead.mockReturnValueOnce(reading.promise)
   state.beforeWelcome.mockReturnValueOnce(loading.promise)
   const activate = () => {
-    state.appListeners.get('second-instance')!()
+    state.appListeners.get('second-instance')!({}, [])
     state.appListeners.get('open-url')!({ preventDefault: vi.fn() }, 'dsh://open')
   }
   await import('../src/main.ts')
