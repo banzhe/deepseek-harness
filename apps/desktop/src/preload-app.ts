@@ -58,6 +58,15 @@ function createProductApi(): DshDesktopProductApi {
     window: {
       reveal: () => ipcRenderer.invoke(DESKTOP_IPC.windowReveal) as Promise<void>,
     },
+    notifications: {
+      show: request => ipcRenderer.invoke(DESKTOP_IPC.notificationsShow, request) as Promise<boolean>,
+      close: id => ipcRenderer.invoke(DESKTOP_IPC.notificationsClose, id) as Promise<void>,
+      onActivate: (listener) => {
+        const handle = (_event: Electron.IpcRendererEvent, activation: Parameters<typeof listener>[0]): void => { listener(activation) }
+        ipcRenderer.on(DESKTOP_IPC.notificationsActivate, handle)
+        return () => { ipcRenderer.off(DESKTOP_IPC.notificationsActivate, handle) }
+      },
+    },
   }
 }
 

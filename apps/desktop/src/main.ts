@@ -2,6 +2,7 @@ import type { ProductEventMap, ProductEvent } from '@deepseek-ai/dsh-client-prod
 import { WINDOWS_TITLEBAR_HEIGHT } from './windows-layout.ts'
 /** Electron shell: desktop project ownership, custom protocol, windows, and lifecycle. */
 
+import { readFileSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -12,6 +13,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  Notification,
   powerMonitor,
   nativeImage,
   nativeTheme,
@@ -22,6 +24,9 @@ import {
   type IpcMainInvokeEvent,
   type MenuItemConstructorOptions,
 } from 'electron'
+/** Renderer-notifications owner: displayed toasts route their activation back through IPC. */
+import { DesktopNotificationRouter } from './desktop-notifications.ts'
+import type { DesktopNotificationActivation } from './ipc.ts'
 import { resolveDesktopPaths } from './paths.ts'
 import { DesktopProjectManager } from './project-manager.ts'
 import { DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError } from './host-process.ts'
@@ -83,6 +88,30 @@ const rendererConsole = new RendererConsoleTail()
 // Platform-conventional logs directory (macOS ~/Library/Logs/<name>, otherwise under userData);
 // set before ready so the first fatal report already resolves under it.
 app.setAppLogsPath()
+
+/**
+ * Set the process AppUserModelID before any notification can be created: on
+ * Windows the operating system silently discards renderer and main-process
+ * notifications whose process id does not match a Start-menu shortcut, and
+ * Electron only self-configures under Squirrel installs, which this release
+ * does not use. The packaged value is electron-builder's `appId`, embedded in
+ * the manifest as `dshDesktopAppId`; development derives one from the package
+ * name. A read failure leaves the platform default rather than blocking startup.
+ */
+try {
+  const manifest: unknown = JSON.parse(readFileSync(join(app.getAppPath(), 'package.json'), 'utf8'))
+  const appId = typeof manifest === 'object' && manifest !== null && 'dshDesktopAppId' in manifest
+    ? manifest.dshDesktopAppId
+    : undefined
+  if (typeof appId === 'string' && appId !== '' && process.platform !== 'linux') {
+    app.setAppUserModelId(appId)
+  } else if (process.platform !== 'linux' && !app.isPackaged) {
+    // Development runs against electron.exe, whose platform default id matches no
+    // shortcut; a derived id at least routes through the app's own notification
+    // path once a pinned shortcut or `setAppUserModelId(electron.exe)` setup exists.
+    app.setAppUserModelId(`com.deepseek-ai.dsh-desktop.${app.name}`)
+  }
+} catch (error) { console.warn('desktop startup: AppUserModelID unavailable', error) }
 
 function currentDesktopLocale(): ReturnType<typeof resolveDesktopLocale> {
   return resolveDesktopLocale(windowsLanguage ?? app.getLocale())
@@ -804,6 +833,34 @@ async function main(): Promise<void> {
     assertProductSender(event)
     focusPrimaryWindow()
   })
+  // Renderer notifications ride the shell so their activation survives the
+  // Windows notification center, where the renderer surface's clicks do not.
+  // Every activation refocuses before the renderer routes its id: a click that
+  // only opened the notification still answers with the application itself.
+  ipcMain.handle(DESKTOP_IPC.notificationsShow, (event, request: unknown) => {
+    assertProductSender(event)
+    if (typeof request !== 'object' || request === null) throw new Error('desktop notifications: invalid request')
+    const { id, title, body } = request as Record<string, unknown>
+    let parsed: { id: string; title: string; body: string } | undefined
+    if (typeof id === 'string' && id !== '' && typeof title === 'string' && title !== ''
+      && typeof body === 'string') {
+      parsed = { id, title, body }
+    }
+    if (parsed === undefined) throw new Error('desktop notifications: invalid request')
+    return notificationRouter.show(parsed)
+  })
+  ipcMain.handle(DESKTOP_IPC.notificationsClose, (event, id: unknown) => {
+    assertProductSender(event)
+    if (typeof id !== 'string' || id === '') throw new Error('desktop notifications: invalid id')
+    notificationRouter.close(id)
+  })
+  const deliverActivation = (activation: DesktopNotificationActivation): void => {
+    const window = mainWindow
+    if (window === undefined || window.isDestroyed()) return
+    focusPrimaryWindow()
+    window.webContents.send(DESKTOP_IPC.notificationsActivate, activation)
+  }
+  notificationRouter.subscribe(deliverActivation)
 
   let promptOperation: Promise<void> | undefined
   let policyAuthenticationQueued = false
@@ -1243,7 +1300,10 @@ async function main(): Promise<void> {
   if (app.isPackaged || process.env.DSH_DESKTOP_DEV_APP === '1') app.setAsDefaultProtocolClient('dsh')
   app.on('open-url', (event, url) => {
     event.preventDefault()
-    if (url === 'dsh://open' || url === 'dsh://open/') focusPrimaryWindow()
+    if (url === 'dsh://open' || url === 'dsh://open/') { focusPrimaryWindow(); return }
+    const id = DesktopNotificationRouter.launchNotificationId(url)
+    if (id !== undefined) notificationRouter.deliver(id)
+    else focusPrimaryWindow()
   })
 
   app.on('activate', (_event, hasVisibleWindows) => {
@@ -1348,7 +1408,21 @@ async function main(): Promise<void> {
   publishUpdate(updateState)
 }
 
-const ownsDesktopInstance = claimDesktopSingleInstance(app, () => { focusPrimaryWindow() })
+/** Renderer-notifications owner: displayed toasts route their activation back through IPC. */
+const notificationRouter = new DesktopNotificationRouter(Notification)
+
+const ownsDesktopInstance = claimDesktopSingleInstance(app, (argv) => {
+  // A later launch exists only to hand over its arguments; a Windows toast
+  // activation arrives here as one `dsh://open?notification=…` argv entry. A
+  // stale notification id still deserves the refocus, just no activation event.
+  let delivered = false
+  for (const argument of argv) {
+    const id = DesktopNotificationRouter.launchNotificationId(argument)
+    if (id === undefined) continue
+    if (notificationRouter.deliver(id)) { delivered = true; break }
+  }
+  if (!delivered) focusPrimaryWindow()
+})
 
 if (ownsDesktopInstance) void app.whenReady().then(main).catch(async (error: unknown) => {
   const message = error instanceof Error ? error.message : String(error)
