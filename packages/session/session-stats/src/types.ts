@@ -36,6 +36,10 @@ export interface SessionStatsProjection {
   decodeMs: number
   /** Summed provider output tokens over the same decode-timed steps. */
   decodeTokens: number
+  /** Summed step wall time (`step/start` → `assistant/message`) over the steps that also report output tokens. */
+  e2eMs: number
+  /** Summed provider output tokens over the same e2e-timed steps (numerator of the TTFT-inclusive speed). */
+  e2eTokens: number
 }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {

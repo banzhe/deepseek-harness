@@ -46,6 +46,10 @@ interface SessionStatsTotals {
   decodeMs: number
   /** Summed provider output tokens over the same steps. */
   decodeTokens: number
+  /** Summed `step/start` → `assistant/message` wall time over steps with a first token and usage. */
+  e2eMs: number
+  /** Summed output tokens over the same steps as `e2eMs`. */
+  e2eTokens: number
 }
 
 /**
@@ -78,6 +82,8 @@ const sessionStatsSchema = z.object({
   ttftSteps: z.number().int().nonnegative(),
   decodeMs: z.number().nonnegative(),
   decodeTokens: z.number().nonnegative(),
+  e2eMs: z.number().nonnegative(),
+  e2eTokens: z.number().nonnegative(),
 }).strict()
 
 /**
@@ -112,7 +118,7 @@ function usageOutputTokens(usage: unknown): number | null {
 /** The `sessionStats` unit registered on `ctx.sessionProjections` (exported for the unit spec). */
 export const sessionStatsProjectionDefinition = {
   key: 'sessionStats',
-  stateVersion: 1,
+  stateVersion: 2,
   stateSchema: sessionStatsStateSchema,
   init: () => ({
     turns: 0,
@@ -123,6 +129,8 @@ export const sessionStatsProjectionDefinition = {
     ttftSteps: 0,
     decodeMs: 0,
     decodeTokens: 0,
+    e2eMs: 0,
+    e2eTokens: 0,
     lastTurn: null,
     openStep: null,
     pendingCalls: {},
@@ -160,6 +168,8 @@ export const sessionStatsProjectionDefinition = {
           if (outputTokens !== null) {
             next.decodeMs += Math.max(0, event.time - firstToken)
             next.decodeTokens += outputTokens
+            next.e2eMs += Math.max(0, event.time - open.startTime)
+            next.e2eTokens += outputTokens
           }
         }
         return next
@@ -207,6 +217,8 @@ export const sessionStatsProjectionDefinition = {
       ttftSteps: state.ttftSteps,
       decodeMs: state.decodeMs,
       decodeTokens: state.decodeTokens,
+      e2eMs: state.e2eMs,
+      e2eTokens: state.e2eTokens,
     }),
   },
 } satisfies ProjectionDefinition<'sessionStats', SessionStatsState>

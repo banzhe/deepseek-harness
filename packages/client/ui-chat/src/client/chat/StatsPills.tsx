@@ -36,6 +36,10 @@ interface WindowStats {
   decodeMs: number
   /** Summed output tokens over the same decode-timed steps. */
   decodeTokens: number
+  /** Summed step wall time over steps that also report output tokens. */
+  e2eMs: number
+  /** Summed output tokens over the same steps as `e2eMs`. */
+  e2eTokens: number
 }
 
 /**
@@ -59,6 +63,8 @@ export function deriveStats(nodes: ChatSnapshot['legacy']['nodes']): WindowStats
   let ttftSteps = 0
   let decodeMs = 0
   let decodeTokens = 0
+  let e2eMs = 0
+  let e2eTokens = 0
   for (const node of nodes) {
     if (node.kind === 'tool-result') {
       if (node.callTime !== null) toolMs += Math.max(0, node.time - node.callTime)
@@ -78,9 +84,13 @@ export function deriveStats(nodes: ChatSnapshot['legacy']['nodes']): WindowStats
     if (reading.decodeMs !== null && reading.outputTokens !== null) {
       decodeMs += reading.decodeMs
       decodeTokens += reading.outputTokens
+      if (reading.ttftMs !== null && node.timing !== undefined && node.timing.stepStartTime !== null) {
+        e2eMs += Math.max(0, node.timing.completedTime - node.timing.stepStartTime)
+        e2eTokens += reading.outputTokens
+      }
     }
   }
-  return { turns: turns.size, steps, llmMs, toolMs, ttftMs, ttftSteps, decodeMs, decodeTokens }
+  return { turns: turns.size, steps, llmMs, toolMs, ttftMs, ttftSteps, decodeMs, decodeTokens, e2eMs, e2eTokens }
 }
 
 /**
@@ -163,10 +173,26 @@ function useSessionStats(useChat: StatPillProps['useChat'], useProjection: UsePr
   return useMemo(() => projected ?? deriveStats(settledNodes), [projected, settledNodes])
 }
 
-function decodeSpeed(stats: WindowStats, t: Translate): string {
+function decodeTps(stats: WindowStats, t: Translate): string {
   return t('message.tokensPerSecond', {
     tps: formatTokensPerSecond(stats.decodeTokens / (stats.decodeMs / 1_000)),
   })
+}
+
+/** TTFT-inclusive figure as a bare number, for the parenthesized reading. */
+function e2eTpsValue(stats: WindowStats): string {
+  return formatTokensPerSecond(stats.e2eTokens / (stats.e2eMs / 1_000))
+}
+
+function e2eTps(stats: WindowStats, t: Translate): string {
+  return t('message.tokensPerSecond', { tps: e2eTpsValue(stats) })
+}
+
+/** Decode speed, with the TTFT-inclusive speed in parentheses when its window has timed steps. */
+function decodeSpeed(stats: WindowStats, t: Translate): string {
+  const decode = decodeTps(stats, t)
+  if (stats.e2eMs <= 0) return decode
+  return `${decode} ${t('stats.speed.e2e', { tps: e2eTpsValue(stats) })}`
 }
 
 /** A static reading: used when the pill has no dialog rows or the mode is Compact. */
@@ -270,10 +296,17 @@ export const ActivityPill = memo(function ActivityPill({ useChat, useProjection,
         {speed !== null && (
           <>
             <dt>{t('stats.dialog.speed')}</dt>
-            <dd>{speed}</dd>
+            <dd>{decodeTps(stats, t)}</dd>
+            {stats.e2eMs > 0 && (
+              <>
+                <dt>{t('stats.dialog.speedE2e')}</dt>
+                <dd>{e2eTps(stats, t)}</dd>
+              </>
+            )}
           </>
         )}
       </dl>
+      {speed !== null && <p className={dialogCss.note}>{t('stats.dialog.speedNote')}</p>}
     </DialogPill>
   )
 })
