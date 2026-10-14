@@ -335,7 +335,9 @@
               "ttftMs": 0,
               "ttftSteps": 0,
               "decodeMs": 0,
-              "decodeTokens": 0
+              "decodeTokens": 0,
+              "e2eMs": 0,
+              "e2eTokens": 0
             },
             "imageLimits": {
               "maxImageBytes": 5242880,
@@ -400,7 +402,9 @@
               "ttftMs": 0,
               "ttftSteps": 0,
               "decodeMs": 0,
-              "decodeTokens": 0
+              "decodeTokens": 0,
+              "e2eMs": 0,
+              "e2eTokens": 0
             },
             "imageLimits": {
               "maxImageBytes": 5242880,
@@ -465,7 +469,9 @@
               "ttftMs": 0,
               "ttftSteps": 0,
               "decodeMs": 0,
-              "decodeTokens": 0
+              "decodeTokens": 0,
+              "e2eMs": 0,
+              "e2eTokens": 0
             },
             "imageLimits": {
               "maxImageBytes": 5242880,
@@ -5740,7 +5746,9 @@
           "ttftMs": 0,
           "ttftSteps": 0,
           "decodeMs": 0,
-          "decodeTokens": 0
+          "decodeTokens": 0,
+          "e2eMs": 0,
+          "e2eTokens": 0
         },
         "imageLimits": {
           "maxImageBytes": 5242880,

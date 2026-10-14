@@ -12,6 +12,8 @@ const STATS: SessionStatsProjection = {
   ttftSteps: 8,
   decodeMs: 300_000,
   decodeTokens: 60_000,
+  e2eMs: 380_000,
+  e2eTokens: 60_000,
 }
 
 const USAGE: TokenUsageProjection = {
