@@ -53,6 +53,7 @@ function appendEmptyAssistantMessage(session: Session, turn: number, step: numbe
 function totals(overrides: Partial<SessionStatsProjection> = {}): SessionStatsProjection {
   return {
     turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0,
+    e2eMs: 0, e2eTokens: 0,
     ...overrides,
   }
 }
@@ -206,7 +207,16 @@ describe('sessionStats wall-time fold (controlled timestamps)', () => {
       at(4_900, 'step/end', { turn: 1, step: 1 }),
     ])).toEqual(totals({
       turns: 1, steps: 1, llmMs: 3_800, ttftMs: 800, ttftSteps: 1, decodeMs: 3_000, decodeTokens: 60,
+      e2eMs: 3_800, e2eTokens: 60,
     }))
+  })
+
+  it('excludes a step without usage from the TTFT-inclusive speed, keeping its numerator and denominator aligned', () => {
+    expect(fold([
+      at(1_000, 'step/start', { turn: 1, step: 1 }),
+      messageAt(4_800, [{ time: 1_800, chunk: { type: 'text-delta', index: 0, text: 'a' } }]),
+      at(4_900, 'step/end', { turn: 1, step: 1 }),
+    ])).toMatchObject({ decodeMs: 0, decodeTokens: 0, e2eMs: 0, e2eTokens: 0 })
   })
 
   it('keeps the first attempt token boundary across an in-step retry (window resetForRetry parity)', () => {
