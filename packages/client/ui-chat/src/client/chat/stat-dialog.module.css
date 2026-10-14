@@ -89,6 +89,12 @@
   overflow-wrap: anywhere;
 }
 
+/* Metric-meaning note under a dialog's rows. */
+.note {
+  margin: 10px 0 0;
+  color: var(--dsw-alias-label-tertiary);
+}
+
 .reasoning {
   color: var(--dsw-alias-label-tertiary);
   white-space: nowrap;

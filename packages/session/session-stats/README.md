@@ -45,6 +45,7 @@ Mount the plugin beside the session store and the projection registry when clien
 | `toolMs` | Summed matched `tool/call` → `tool/result` wall time |
 | `ttftMs` / `ttftSteps` | Summed first-token latency and the steps carrying it |
 | `decodeMs` / `decodeTokens` | Summed decode wall time and provider output tokens over usage-reporting steps |
+| `e2eMs` / `e2eTokens` | Summed step wall time (`step/start` → `assistant/message`) and output tokens over the same usage-reporting steps that also carry a first token; the TTFT-inclusive speed numerator and denominator |
 
 Every field is 0 until its first contributing event; the composed registry always serves the key, so clients read the value rather than key presence. Clients render whole-log figures through the projection seam's snapshot and change feed; the reference consumer is the web chat stats strip, whose window fold mirrors these field names as its no-unit fallback.
 

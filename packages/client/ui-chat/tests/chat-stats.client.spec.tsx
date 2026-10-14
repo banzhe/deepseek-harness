@@ -72,7 +72,7 @@ describe('deriveStats', () => {
     // tokenUsage projection); decodeTokens is a throughput input, not a
     // billed total.
     expect(Object.keys(stats).sort()).toEqual(
-      ['decodeMs', 'decodeTokens', 'llmMs', 'steps', 'toolMs', 'ttftMs', 'ttftSteps', 'turns'],
+      ['decodeMs', 'decodeTokens', 'e2eMs', 'e2eTokens', 'llmMs', 'steps', 'toolMs', 'ttftMs', 'ttftSteps', 'turns'],
     )
   })
 
@@ -145,6 +145,7 @@ describe('composer stats pills', () => {
   function sessionStats(overrides: Record<string, number>): Record<string, number> {
     return {
       turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0,
+      e2eMs: 0, e2eTokens: 0,
       ...overrides,
     }
   }
@@ -174,9 +175,9 @@ describe('composer stats pills', () => {
   it('compact keeps only speed and cache hit, with no interactive statistics', () => {
     const { source } = makeSource({ nodes: [timedStep()] })
     const view = render(<StatsPills {...props(source)} usePerformanceUsage={selector => selector('compact')} />)
-    expect(view.container.textContent).toBe('20 tok/sCache hit 90%')
+    expect(view.container.textContent).toBe('20 tok/s (16 tok/s)Cache hit 90%')
     expect(view.queryByRole('button')).toBeNull()
-    fireEvent.mouseOver(view.getByText('20 tok/s'))
+    fireEvent.mouseOver(view.getByText('20 tok/s (16 tok/s)'))
     expect(view.queryByRole('dialog')).toBeNull()
     view.rerender(<StatsPills {...props(source)} />)
     expect(view.getAllByRole('button')).toHaveLength(2)
@@ -239,8 +240,17 @@ describe('composer stats pills', () => {
     const { source } = makeSource({ nodes: [timedStep()] })
     const view = render(<StatsPills {...props(source)} />)
     const timePill = view.getAllByRole('button')[0]!
-    expect(timePill.textContent).toBe('1 turns 1 steps·20 tok/s')
-    expect(timePill.getAttribute('aria-label')).toBe('1 turns 1 steps · 20 tok/s')
+    expect(timePill.textContent).toBe('1 turns 1 steps·20 tok/s (16 tok/s)')
+    expect(timePill.getAttribute('aria-label')).toBe('1 turns 1 steps · 20 tok/s (16 tok/s)')
+  })
+
+  it('omits the TTFT-inclusive reading when no step carries timing for it', () => {
+    const { source } = makeSource({ nodes: [timedStep()] })
+    const view = render(<StatsPills {...props(source, {
+      tokenUsage: USAGE,
+      sessionStats: sessionStats({ turns: 1, steps: 1, decodeMs: 3_000, decodeTokens: 60 }),
+    })} />)
+    expect(view.getAllByRole('button')[0]!.textContent).toBe('1 turns 1 steps·20 tok/s')
   })
 
   it('marks each pill with its dock entry id', () => {
@@ -248,7 +258,7 @@ describe('composer stats pills', () => {
     const view = render(<StatsPills {...props(source)} />)
     const pills = [...view.container.querySelectorAll('[data-composer-stat]')]
     expect(pills.map(pill => [pill.getAttribute('data-composer-stat'), pill.textContent])).toEqual([
-      ['activity', '1 turns 1 steps·20 tok/s'],
+      ['activity', '1 turns 1 steps·20 tok/s (16 tok/s)'],
       ['usage', '105 tok·Cache hit 90%'],
     ])
   })
@@ -275,7 +285,9 @@ describe('composer stats pills', () => {
     // No tool call in this session: the row is absent, not zeroed.
     expect(details.textContent).not.toContain('Tool time')
     expect(details.textContent).toContain('Avg time to first token (TTFT)0.8s')
-    expect(details.textContent).toContain('Tokens per second (TPS)20 tok/s')
+    expect(details.textContent).toContain('Decode speed (TPS)20 tok/s')
+    expect(details.textContent).toContain('Speed incl. TTFT (TPS)16 tok/s')
+    expect(dialog.textContent).toContain('Decode speed: output tokens')
     // Token accounting lives on the usage pill's own dialog, not here.
     expect(dialog.textContent).not.toContain('Token usage')
   })
@@ -359,7 +371,7 @@ describe('composer stats pills', () => {
     const { source } = makeSource({ nodes: [timedStep()] })
     const view = render(<StatsPills {...props(source, { tokenUsage: tokenUsage(9_995, 5) })} t={t} />)
     const [timePill, usagePill] = [...view.getAllByRole('button')] as [HTMLElement, HTMLElement]
-    expect(timePill.textContent).toBe('1 轮 1 步·20 tok/s')
+    expect(timePill.textContent).toBe('1 轮 1 步·20 tok/s (16 tok/s)')
     // Whole-log total 9995 + 5 + 1 compacts to 10K.
     expect(usagePill.textContent).toBe('10K tok·缓存命中 99.95%')
     fireEvent.click(timePill)
@@ -367,7 +379,8 @@ describe('composer stats pills', () => {
     expect(timeDialog.getAttribute('aria-label')).toBe('会话统计')
     expect(timeDialog.textContent).toContain('模型用时3.8秒')
     expect(timeDialog.textContent).toContain('首 token 平均（TTFT）0.8秒')
-    expect(timeDialog.textContent).toContain('输出速度（TPS）20 tok/s')
+    expect(timeDialog.textContent).toContain('解码速度（TPS）20 tok/s')
+    expect(timeDialog.textContent).toContain('含 TTFT 速度（TPS）16 tok/s')
     fireEvent.keyDown(document, { key: 'Escape' })
     fireEvent.click(usagePill)
     const usageDialog = view.getByRole('dialog')
@@ -496,17 +509,17 @@ describe('composer stats pills', () => {
       tokenUsage: USAGE,
       sessionStats: sessionStats({
         turns: 200, steps: 200, llmMs: 100_000, toolMs: 62_000,
-        ttftMs: 1_600, ttftSteps: 2, decodeMs: 3_000, decodeTokens: 60,
+        ttftMs: 1_600, ttftSteps: 2, decodeMs: 3_000, decodeTokens: 60, e2eMs: 3_800, e2eTokens: 60,
       }),
     })} />)
     const timePill = view.getAllByRole('button')[0]!
-    expect(timePill.textContent).toBe('200 turns 200 steps·20 tok/s')
+    expect(timePill.textContent).toBe('200 turns 200 steps·20 tok/s (16 tok/s)')
     fireEvent.click(timePill)
     const dialog = view.getByRole('dialog')
     expect(dialog.textContent).toContain('LLM time1m40s')
     expect(dialog.textContent).toContain('Tool time1m2s')
     expect(dialog.textContent).toContain('Avg time to first token (TTFT)0.8s')
-    expect(dialog.textContent).toContain('Tokens per second (TPS)20 tok/s')
+    expect(dialog.textContent).toContain('Decode speed (TPS)20 tok/s')
   })
 
   it('omits the cache-hit segment when nothing was billed on the input side', () => {
