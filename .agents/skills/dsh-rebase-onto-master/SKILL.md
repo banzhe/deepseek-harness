@@ -1,40 +1,32 @@
 ---
 name: dsh-rebase-onto-master
-description: Rebase the current branch onto a released version of origin/master by default, using notes under this skill, after summarizing the branch, checking machine compatibility, and writing a tracked migration document under migrations/. Write one note in notes/ for every local requirement or fix in the same change. Use when implementing a requirement or fix, when the user asks to rebase, or when judging whether local work has already landed on the base.
+description: 将个人分支的本地工作变基到 origin/master 的已发布版本（默认）或指定的 master 提交，以应用合并上游的修改。过程包括选择基线、拉取最新的 my_dev、盘点分支上额外 commit 的 feature、判断基线是否已包含每个 feature、重放并解决冲突、写入受版本控制的 rebase 文档，并在完成后提交该文档与其他修改。当用户要求变基、合并上游、升级到新发布版本，或需要判断本地工作是否已进入基线时使用。
 ---
 
-# Rebase onto a released version, or master when asked
+# 变基到上游版本
 
-This skill is for a personal branch. Keep supporting rules as an append-only trailing section in root `AGENTS.md`. Do not edit documentation gates, bilingual pairs, or `.gitignore` to support it.
+本 skill 只负责把本地工作应用到上游基线之上。
 
-Write one note under [notes/](notes/README.md) for every local requirement or fix in the same change that implements it. Rebase using those notes, not commit messages alone, to decide whether the base already contains the work. The [history policy](../../../AGENTS.md#conventions) still forbids raw `--force`; stacked PRs stay with [dsh-merging-stacked-prs](../dsh-merging-stacked-prs/SKILL.md).
+本 skill 面向个人分支。支持性规则以追加方式写在根目录 `AGENTS.md` 末尾的独立章节中。不要为了支持本 skill 而修改文档门禁、双语配对或 `.gitignore`。[历史策略](../../../AGENTS.md#conventions) 仍禁止原始 `--force`；堆叠 PR 交由 [dsh-merging-stacked-prs](../dsh-merging-stacked-prs/SKILL.md) 处理。
 
-Default base: the newest release commit on `origin/master`. Rebasing onto the tip of `master` picks up unreleased work and happens only when the user asks for it.
+分支还携带一些无法通过 commit 重放的内容：DSH profile、快捷方式、环境变量、`PATH` 上的工具。变基前要把它们记录到 [rebase/](rebase/README.md) 下受版本控制的文档中，使另一台机器能够迁移。该文档只记录本分支相对基线额外的 commit 及其 feature 状态。
 
-A branch also carries work that no commit can replay: a DSH profile, a Start Menu shortcut, an environment variable, a tool on `PATH`. Before any rewrite, summarize the branch, check that this machine still satisfies it, and record both in a tracked document under [migrations/](migrations/README.md), so the next checkout migrates instead of guessing.
+## 1. 选择基线
 
-## Author a note
+默认基线是 `origin/master` 上最新的 release commit。每个 dsh 发布都以包含 `release(dsh): <version>` 的 commit 进入 `master`，其 `package.json` 带有该版本号。`dsh-v<version>` tag 只存在于本地且不完整，只作参考，不作为依据。
 
-Create `notes/YYYY-MM-DD-<kebab-topic>.md` from [notes/README.md](notes/README.md) before or with the implementation. One note per requirement or fix. Keep `Status: local` while the work exists only on this branch.
+解析顺序：
 
-Implement the requirement as a small, isolated patch so a later rebase can replay it onto a chosen base. Change only the owning source and the tests that prove the intent. Do not edit upstream README files, Agent Notes, pairing sidecars, documentation gates, or unrelated docs to carry a local requirement.
-
-## Choose the base
-
-Every dsh release reaches `master` as a commit whose message contains the line `release(dsh): <version>`: the subject of the version bump commit and the body of the merge commit that lands it. The newest such commit is the last released version, and it carries that version in its own `package.json`. Release tags named `dsh-v<version>` mark most of those landings, but they are local and incomplete — `origin` carries no tags, and the newest release is untagged — so treat the release message as the authority and a matching tag as the same base.
-
-Resolve a version into a base in this order:
-
-1. The user named a version (`0.1.5-rc.2`, `dsh-v0.1.5-rc.2`) — use that version.
-2. The user named `master` or `origin/master` — the base is the tip of `origin/master`; skip the release lookup below.
-3. Otherwise — the newest release commit is the base.
+1. 用户指定了版本（如 `0.1.5-rc.2`）：使用该版本。
+2. 用户指定了 `master` 或 `origin/master`：基线为 `origin/master` 的最新提交，跳过发布查找。
+3. 其他情况：最新的 release commit。
 
 ```sh
 git fetch origin master
 base=$(git log origin/master -1 --format='%H' --grep='^release(dsh): ')
 ```
 
-For a named version, prefer its tag and fall back to the release message:
+指定版本时：
 
 ```sh
 version='0.1.5-rc.2'
@@ -42,27 +34,29 @@ base=$(git rev-parse --verify --quiet "refs/tags/dsh-v$version")
 [ -n "$base" ] || base=$(git log origin/master -1 --format='%H' --grep="^release(dsh): $version")
 ```
 
-Confirm the base carries the expected version, and report it before rewriting history:
+确认并报告基线版本：
 
 ```sh
 git show "$base:package.json" | node -p "JSON.parse(require('node:fs').readFileSync(0,'utf8')).version"
 git log -1 --format='%h %ci %s' "$base"
 ```
 
-Stop and ask when either command prints nothing, when the printed version differs from the version the user named, or when `base` is not an ancestor of `origin/master`.
+以下情况停下来询问用户：任一命令无输出；版本与用户指定的不一致；`base` 不是 `origin/master` 的祖先。
 
-## Preconditions
+## 2. 前置检查
 
-1. Confirm the checkout. Stop if a merge or rebase is already in progress.
+1. 确认检出位置与分支。若已有 merge 或 rebase 进行中，停止。当前分支必须是 `my_dev`。
+2. 除 notes 外工作区必须干净。先 stash 或 commit 其他改动。
+3. 变基前拉取最新的 `my_dev`。仅快进拉取，不做合并：
 
 ```sh
-git status --short --branch
-git rev-parse --show-toplevel
+git fetch origin my_dev
+git pull --ff-only origin my_dev
 ```
 
-2. Require a clean worktree except these notes. Stash or commit other changes first.
-3. If the branch is in an official GitHub stack, stop and use [dsh-merging-stacked-prs](../dsh-merging-stacked-prs/SKILL.md) instead of rebasing this head alone.
-4. Record the current branch, `HEAD`, and the fork point the replay starts from.
+   快进失败时停止，报告本地与远端分叉的情况，询问用户如何处理。
+4. 若分支属于官方 GitHub 堆叠，停止，改用 [dsh-merging-stacked-prs](../dsh-merging-stacked-prs/SKILL.md)。
+5. 记录分支、`HEAD` 与分叉点：
 
 ```sh
 git branch --show-current
@@ -71,144 +65,127 @@ fork=$(git merge-base HEAD origin/master)
 git rev-list --count "$fork..HEAD"
 ```
 
-Stop when `$fork..HEAD` is empty: there is no local work to replay, so report how far `HEAD` sits behind the base instead of rewriting history.
+若 `$fork..HEAD` 为空，没有需要重放的本地工作：不改写历史，报告 `HEAD` 落后基线多少，并说明本次没有实际变基。
 
-## Inventory local work
+## 3. 盘点本地工作
 
-Read every `notes/*.md` file except `README.md`. If a requirement or fix on this branch has no note, write that note before rebasing.
+读取 `notes/*.md`（除 `README.md`）。若某个本地 commit 没有对应 note，在变基前补写（见 dsh-feature-or-fix 的第 2 节）。没有 note 的 commit 属于不确定项，不要丢弃。
 
-Collect `git log --oneline --reverse "$fork..HEAD"` and the paths each commit touches. Match commits to notes by identifying paths, unique strings, and intent. A commit with no note is uncertain: do not drop it.
+```sh
+git log --oneline --reverse "$fork..HEAD"
+```
 
-## Summarize the branch
+用路径、唯一字符串和意图把 commit 与 note 对应起来。
 
-Summarize before rewriting anything, because the rebase replaces every commit id and the summary is easier to write while they still line up. Use `"$fork..HEAD"`: `"$base..HEAD"` also names the commits that landed on `master` between the release and the fork, which are not this branch's work.
+## 4. 总结分支的额外 commit
+
+变基会替换所有 commit id，因此在改写前先总结。只关注 `"$fork..HEAD"` 中的 commit：这是本分支相对基线额外带来的全部工作。不要用 `"$base..HEAD"`，它还包含发布版与分叉点之间落地的 master 提交。
 
 ```sh
 git log --oneline --reverse "$fork..HEAD"
 git diff --stat "$fork..HEAD"
-git diff --shortstat "$fork..HEAD"
 git diff --diff-filter=D --name-only "$fork..HEAD"
 git diff "$fork..HEAD" -- '*/package.json' pnpm-lock.yaml tsconfig.base.json tsconfig.host.json
 ```
 
-Cover four things:
+对每个额外 commit（或每个 feature），记录：
 
-1. **Commits** — one line each, with the intent its message states.
-2. **Behavior** — what a user or a model observes differently after pulling.
-3. **Machine-facing surface** — added, removed, or renamed files that something outside the repository reads: scripts, `package.json` and lockfile entries, `tsconfig` references, and assets served from a fixed URL such as `apps/web/public`.
-4. **Verification** — the tests and gates that cover the change.
+1. **Feature**：commit 标题与其 message 所述的意图。
+2. **行为**：拉取后用户或模型会观察到的差异。
+3. **面向机器的接口**：脚本、`package.json` 与 lockfile、`tsconfig` 引用、固定 URL 的资源。
+4. **验证**：覆盖该 feature 的测试与门禁。
 
-Cite paths and stay factual. This summary is the body of the migration document; do not write a different account there.
+## 5. 记录机器状态（rebase 文档）
 
-## Check machine compatibility
+变基前，从 [rebase/README.md](rebase/README.md) 创建 `rebase/YYYY-MM-DD-<branch-slug>-onto-<base-version>.md`。
 
-Compare the branch against this machine in both directions. Report every finding as **compatible**, **actionable** (someone must run a step), or **blocked** (stop and ask).
+- 只记录第 4 节列出的额外 commit 与 feature，不记录基线或已落地的工作。
+- 「Extra commits and features」表格中的每一行即一个 feature，状态列在第 6 节分类后填写。
+- 兼容性要求一节只记录另一台机器必须满足的要求（工具、环境变量名、profile 步骤、快捷方式）。本机的检查与适配由 [dsh-compatibility-check](../dsh-compatibility-check/SKILL.md) 完成，检查结果写入此处时只保留要求，不写本机路径、版本或凭据位置。
+- 文档必须受版本控制，不能写入 gitignore 路径。
+- 不写 commit hash，用 commit 标题和路径标识 feature。
+- 凭据只写名称，不写值。
+- 不要编辑另一台机器的 DSH home；把步骤写进文档。
 
-Does the machine satisfy what the branch now requires?
+## 6. 判断基线是否已包含工作
 
-```sh
-node -v
-pnpm -v
-git --version
-node -p "require('./package.json').engines.node"
-node -p "require('./package.json').packageManager"
-```
-
-Read the tool names out of the branch's own scripts rather than assuming them, then test each one:
-
-```sh
-git diff "$fork..HEAD" -- '*.ps1' '*.sh' '*.mjs' | grep -Eoh 'Get-Command [A-Za-z]+|command -v [A-Za-z]+' | sort -u
-```
-
-Does machine configuration outside the repository still point at what the branch changed?
-
-```sh
-git diff --diff-filter=D --name-only "$fork..HEAD"
-grep -rnF 'deepseek-harness' "${DSH_HOME:-$HOME/.dsh}" --include='*.yml' --include='*.yaml' --include='*.json'
-```
-
-Set `DSH_HOME` first when the shell does not already export it: the DSH home is not always `$HOME/.dsh`.
-
-Check, at minimum:
-
-- **Toolchain** — `node` and `pnpm` against the declared `engines` and `packageManager`; a lockfile change needs the declared pnpm.
-- **External tools** — every binary a new or changed script invokes. Missing and optional = actionable; missing and required = blocked.
-- **Environment variables** — names the branch reads, reported as present or absent. Never read, copy, or commit a value; `.env` is gitignored, so a name that lives only there is a per-machine step.
-- **Deleted and renamed paths** — search the DSH profile, `settings.yaml`, and root scripts for the removed path. A surviving reference is blocked until its owner fixes it.
-- **State outside git** — a shortcut, a pinned taskbar entry, and profile `link:` targets all survive a pull and keep pointing at the old target.
-- **Absolute paths** — a profile linking an absolute checkout path is per-machine and cannot migrate by pulling.
-
-Report the findings before rewriting history. Never edit another machine's DSH home; write the step into the migration document instead. These are local observations, not document content: the compatibility section records what another machine must satisfy and never this host's paths, versions, credential store, or current state.
-
-## Write the migration document
-
-Create `migrations/YYYY-MM-DD-<branch-slug>-onto-<base-version>.md` from [migrations/README.md](migrations/README.md) before the rebase, so the pre-rebase state is recorded while it exists. Fill it from the two sections above: the branch summary, the compatibility findings each with the command or edit that resolves it, and the ordered steps another machine runs after `git pull` — tool installs, environment variables, profile edits, shortcut installation, and the commands that verify the result.
-
-The document is version-controlled, so keep it tracked and commit it with the branch; never write it to a gitignored path. Identify each change by its commit subject and paths, never by a commit hash: `verify-repository-references` rejects hashes in maintained files, and the rebase invalidates them. Run `git commit` only when the user asks for a commit; otherwise leave the document written and staged for the next commit. Record environment facts as a reader needs them, and only the names of credentials.
-
-## Decide what the base already contains
-
-For each note with `Status: local`, search the chosen base — not `origin/master` — using the note's **Already-on-master test**, identifying paths, and unique strings:
+对每条 `Status: local` 的 note，使用其 **Already-on-master 测试**，在 `"$base"` 上搜索（不是 `origin/master`）：
 
 ```sh
 git grep -n -F -- <unique-string> "$base" -- <path>
 git log "$base" -- <path>
 ```
 
-Classify the note:
+分类：
 
-- **landed** — the base already implements the stated intent, even if the local patch differs.
-- **not-landed** — the intent is absent from the base.
-- **post-release** — the intent is absent from the base but present on `origin/master`, so a later release already carries it. Report it and ask whether to retarget `origin/master`; rebasing onto the version replays work upstream already accepted.
-- **uncertain** — the search is inconclusive. Stop and ask; do not drop the work.
+- **landed**：基线已实现该意图，即使写法不同。
+- **not-landed**：基线中不存在。
+- **post-release**：基线中不存在，但 `origin/master` 已有。报告并询问是否以 `origin/master` 为目标。
+- **uncertain**：结论不确定。不要丢弃该工作，按 not-landed 的方式保留本地意图重放，并在迁移文档中明确标注该 note 的结果为 uncertain。
 
-Report the classification before rewriting history. Do not rebase until landed versus not-landed is explicit for every matched note.
+分类结果写入迁移文档。全部 note 都已分类之后再开始变基。
 
-## Replay onto the base
+## 7. 重放到基线
 
-Rebase onto the chosen base from the recorded fork point, with empty commits dropped:
+重放与任何历史改写（重排、拆分、修改 message 或作者）必须使用 [dsh-non-interactive-git-rebase](../dsh-non-interactive-git-rebase/SKILL.md) 的方法，包括先创建备份分支。
 
 ```sh
+git branch backup-before-rebase-$(date +%Y%m%d-%H%M%S) HEAD
 git rebase --empty=drop --onto "$base" "$fork"
 ```
 
-During a conflict, identify the commit and its note:
+冲突时，先确定对应 commit 与 note：
 
-- **landed** — take the base side (`ours` during a rebase) for the note's paths. If the commit then has no remaining diff, `git rebase --skip`; otherwise stage the base versions and `git rebase --continue`.
-- **not-landed** — keep the local intent and resolve the conflict. Do not take the base blindly.
-- **uncertain** or **no note** — stop. Leave the rebase in progress and ask.
+- **landed**：对该 note 的路径采用基线一侧（变基期间为 `ours`）。若 commit 无剩余差异，`git rebase --skip`；否则暂存基线版本并 `git rebase --continue`。
+- **not-landed** 或 **uncertain**：保留本地意图并解决冲突，不盲目采用基线。uncertain 的解决结果需在迁移文档中标注。
+- **无 note**：停止，保持变基进行中，询问用户。
 
-Rebasing onto a version leaves the branch without the commits in `"$base..origin/master"`; they return at the next rebase onto `master` or a newer release. Say so in the report.
+用户取消时用 `git rebase --abort`，不留混合状态的工作树。不使用原始 `--force`。
 
-Do not use raw `--force`. Abort with `git rebase --abort` rather than leaving a mixed tree if the user cancels.
+## 8. 变基之后
 
-## After the rebase
-
-1. Delete or set `Status: landed` on every note classified landed.
-2. Keep `Status: local` notes that still describe commits in `"$base..HEAD"`.
-3. Set `Rebased on:` in the migration document and drop the steps for work classified landed; the document names changes by subject and path, so the rewrite leaves it readable.
-4. If the branch has an upstream, publish only when the user asks, and only with an exact lease:
+1. 归类为 landed 的 note 删除，或设为 `Status: landed`。
+2. 仍描述 `"$base..HEAD"` 中 commit 的 note 保持 `Status: local`。
+3. rebase 文档中设置 `Rebased on:`，把 landed 的 feature 从表格中删去或标注为 landed，保留 uncertain 的标注。
+4. 构建与检查通过后，提交 rebase 文档和其他修改（包括 note 状态的更新）到 `my_dev`：
 
 ```sh
-git fetch origin <branch>
-git push --force-with-lease=<branch>:<observed-oid> origin <branch>
+git add rebase/ .agents/skills/dsh-rebase-onto-master/notes/
+git commit -m "docs(rebase): 记录 my_dev 变基到 <base-version> 的 rebase 文档"
 ```
 
-5. Select post-rewrite checks with [dsh-pre-push-checks](../dsh-pre-push-checks/SKILL.md) when the user asked to push or to claim the branch is ready.
-
-## Build on this machine
-
-A rebase replaces commits; it does not refresh build outputs. After the replay finishes, build locally:
+   提交信息与内容不写 commit hash。若变基后还有其他需要提交的文件，一并纳入。
+5. 推送前用 [dsh-pre-push-checks](../dsh-pre-push-checks/SKILL.md) 选择检查项。`my_dev` 直接推送，不开 PR。推送时使用精确 lease，不使用原始 `--force`：
 
 ```sh
-pnpm install
+git fetch origin my_dev
+git push --force-with-lease=my_dev:<observed-oid> origin my_dev
+```
+
+6. 不推送到 `master`，不向 DSH 官方上游提交。
+
+## 9. 本机构建
+
+变基不刷新构建产物：
+
+```sh
+pnpm install   # 仅当重放涉及 pnpm-lock.yaml、package.json 或 workspace 清单
 pnpm run build
 ```
 
-Run `pnpm install` whenever the replay touched `pnpm-lock.yaml`, a `package.json`, or a workspace manifest: the rewritten tree can disagree with the installed `node_modules`. `pnpm run build` emits `lib/` and the runtime bundles under the current toolchain, which is the artifact-plane evidence that source-plane tests do not produce.
+任一命令失败即停止并报告失败的包与首行错误。不要为消除失败而修改无关源码。若失败涉及基线已删除的包，先 `pnpm run clean` 再重建。构建通过后再执行第 8 节的提交。
 
-Stop and report instead of continuing when either command fails. Name the failing package, the first error line, and the fix; do not edit unrelated source to clear the failure. When the failure names a package the base removed, run `pnpm run clean` and rebuild before diagnosing further.
+## 10. 插件与配置检查
 
-Report the build result, and the commands run, with the rest of the rebase report.
+变基完成后（包括空变基），运行 [dsh-compatibility-check](../dsh-compatibility-check/SKILL.md)，检查 `/root/CODE/dsh-plugins` 的版本范围，以及 `/root/CODE/.dsh` 下的 profile 启动结果。本 skill 不再重复其步骤。
 
-Report the version and base used, the new `HEAD`, which notes landed, which commits were skipped or dropped, the migration document path, and any remaining local notes.
+## 11. 报告
+
+- 使用的版本与基线，新的 `HEAD`。
+- 每条 note 的分类结果（landed、not-landed、post-release、uncertain），uncertain 项明确标注。
+- 被跳过或丢弃的 commit。
+- rebase 文档路径，以及提交的 commit 标题。
+- 构建结果与所运行的命令。
+- 说明：变基到某个版本后，`"$base..origin/master"` 的 commit 暂不在分支上，要到下一次变基到 `master` 或更新版本时才会回归。
+- 剩余的本地 note。
+- 插件与配置兼容性检查的结论（见 dsh-compatibility-check 的报告）。
