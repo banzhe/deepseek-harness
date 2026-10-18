@@ -63,8 +63,10 @@ prerelease 规则：`^0.2.1-alpha.2` 会匹配 `0.2.1-rc.2`。
 2. **组合结果**：
 
 ```sh
-cd /root/CODE/deepseek-harness && DSH_HOME=/root/CODE/.dsh pnpm dsh web --profile <name> --dump-config
+cd /root/CODE/deepseek-harness && DSH_HOME=/root/CODE/.dsh pnpm dsh web --dump-config
 ```
+
+`pnpm dsh web` 已默认选择 profile，不要再传 `--profile`，否则报 `select a profile only once`。
 
 3. **残留 id**：`cordis.patch.yml` 中的插件 id 若在组合结果中不存在，记为 blocked。
 4. **凭据与设置**：只检查变量名或键名，不读取、不复制、不记录值（例如 `.credentials.yaml` 的 refs 段）。
@@ -72,13 +74,20 @@ cd /root/CODE/deepseek-harness && DSH_HOME=/root/CODE/.dsh pnpm dsh web --profil
 ## 5. 启动验证（端口 23008）
 
 1. 确认端口空闲：`ss -ltn | grep ':23008 '`。若已占用，报告占用进程，不要抢占。
-2. 启动，把 stdout 与 stderr 写入日志（长时间运行，使用后台作业或子代理）：
+2. 启动前先构建产物。链接的包（如 `ui-deepseek-model-label-1017`）缺少 `lib/client.js` 时，`client-hmr` 启动失败：
 
 ```sh
-cd /root/CODE/deepseek-harness && DSH_HOME=/root/CODE/.dsh pnpm dsh web --profile <name> --port 23008 --no-open > /tmp/dsh-web-23008.log 2>&1
+cd /root/CODE/deepseek-harness && pnpm run build:artifacts
 ```
 
-3. 取得带 token 的地址。token 每次进程启动随机生成，不能固定。从日志中取出 `dsh web: <url>` 行：
+   构建长时间运行，交给 `workflow_runner` 子代理执行，并核对 `packages/client/ui-deepseek-model-label-1017/lib/client.js` 存在。
+3. 启动，把 stdout 与 stderr 写入日志（长时间运行，使用后台作业或子代理）：
+
+```sh
+cd /root/CODE/deepseek-harness && DSH_HOME=/root/CODE/.dsh pnpm dsh web --port 23008 --no-open > /tmp/dsh-web-23008.log 2>&1
+```
+
+4. 取得带 token 的地址。token 每次进程启动随机生成，不能固定。从日志中取出 `dsh web: <url>` 行：
 
 ```sh
 grep -m1 '^dsh web: http' /tmp/dsh-web-23008.log | sed 's/^dsh web: //'
@@ -87,13 +96,24 @@ grep -m1 '^dsh web: http' /tmp/dsh-web-23008.log | sed 's/^dsh web: //'
    - 输出为空：服务尚未就绪，等待数秒后重试；超过约 60 秒仍无输出，按第 6 节检查日志。
    - 用 `playwright-cli` 或其他浏览器工具访问时，必须使用这个完整 URL（含 `token` 参数）。
    - token 只存在于本次进程的日志中。不得写入 skill、迁移文档、changelog 或提交的文件。报告里只写端口与 HTTP 状态。服务重启后 token 会变化，需要重新读取日志。
-4. HTTP 检查：`curl -s -o /dev/null -w '%{http_code}' "<带 token 的 URL>"` 应返回 200。
-5. 阅读启动日志（`$DSH_HOME/logs/startup-*.log`，路径在启动输出末尾给出），重点看：
+5. HTTP 检查分两步，不能只用带 token 的地址直接判断 200。带 token 的地址先返回 303 并设置 HttpOnly 鉴权 cookie；携带该 cookie 访问根路径才返回 200：
+
+```sh
+url=$(grep -m1 '^dsh web: http' /tmp/dsh-web-23008.log | sed 's/^dsh web: //')
+jar=$(mktemp)
+curl -s -o /dev/null -w 'token step: %{http_code}\n' -c "$jar" "$url"        # 期望 303
+curl -s -o /dev/null -w 'cookie step: %{http_code}\n' -b "$jar" http://127.0.0.1:23008/   # 期望 200
+rm -f "$jar"
+```
+
+   不带 token 且无 cookie 访问应返回 401，用来确认鉴权生效。报告中只写状态码，不打印 token 或 cookie。
+6. 阅读启动日志（`$DSH_HOME/logs/startup-*.log`，路径在启动输出末尾给出），重点看：
    - `Plugins waiting for services`：缺失的服务提供方，多半是插件被禁用或加载失败。
-   - `ENOENT` 指向某个 `lib/` 文件：链接的包尚未构建。在对应检出目录执行 `pnpm run build:artifacts` 后重试。
+   - `ENOENT` 指向某个 `lib/` 文件：链接的包尚未构建，回到第 2 步执行 `pnpm run build:artifacts`。
    - `skippedBundles`：被跳过的 bundle 及原因。
-6. 启动失败时先区分配置问题与代码问题：配置问题看 `--dump-config` 的结果；代码问题看日志中的错误路径与首行错误。
-7. profile 依赖的版本尚未发布而导致启动失败是允许的：在报告中记为 **pending-release**，并说明缺失的版本，不视为本次 PR 失败。
+   - 启动成功时日志中不应出现以上任何一项；注意区分旧日志与本次启动的日志。
+7. 启动失败时先区分配置问题与代码问题：配置问题看 `--dump-config` 的结果；代码问题看日志中的错误路径与首行错误。
+8. profile 依赖的版本尚未发布而导致启动失败是允许的：在报告中记为 **pending-release**，并说明缺失的版本，不视为本次 PR 失败。
 
 ## 6. 最小适配
 
