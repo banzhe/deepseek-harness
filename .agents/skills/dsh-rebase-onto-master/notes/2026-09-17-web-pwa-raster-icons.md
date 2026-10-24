@@ -1,29 +1,32 @@
-# Web and PWA icons ship as a rounded raster set
+# Web and PWA install icons ship the local launcher artwork
 
 - Kind: requirement
 - Status: local
 - Identifying paths:
-  - apps/web/public/manifest.webmanifest
-  - apps/web/public/favicon.ico
   - apps/web/public/icon-192.png
   - apps/web/public/icon-512.png
-  - apps/web/public/icon-maskable-192.png
   - apps/web/public/icon-maskable-512.png
   - apps/web/public/apple-touch-icon.png
-  - apps/web/index.html
   - apps/web/tests/pwa-manifest.e2e.ts
-  - packages/host/frontend-static/src/index.ts
 - Unique strings or tests:
-  - `ships the rounded tab and launcher icons beside the opaque platform-masked set`
+  - `ships every declared icon at its declared edge with artwork inside it`
+  - `ships an opaque full-bleed maskable icon`
   - `purpose: "maskable"`
-  - `image/vnd.microsoft.icon`
 
 ## Intent
 
-The browser tab and the installed application show one square source artwork instead of the previous `favicon.svg`. The tab and ordinary launcher icons are rounded with a 22% corner radius and carry an alpha channel; the maskable and Apple touch icons stay full-bleed and opaque so the platform's own mask does not cut a second shape inside the rounded corners. The manifest declares real pixel sizes and separates `purpose: "any"` from `purpose: "maskable"`. `favicon.svg` is deleted. The frontend-static MIME table gains `.png` and `.ico`, without which the tab and manifest icons ship as `application/octet-stream`.
+The installed Web application shows the local launcher artwork instead of the whale vector mark. `icon-192.png` and `icon-512.png` are rounded with a 22% corner radius and carry an alpha channel; `icon-maskable-512.png` and `apple-touch-icon.png` stay full-bleed and opaque, so the platform's own mask does not cut a second shape inside the rounded corners.
 
-This supersedes the earlier `2026-09-16-favicon-brand-blue.md` requirement, which is deleted with this change: it kept a single `#4D6BFE` fill inside `favicon.svg`, and that file no longer ships.
+The manifest declaration, relative `start_url` and `scope`, `standalone` display mode, `apple-touch-icon` link, and the `.png` entry in the frontend-static MIME table follow the upstream install-icon convention unchanged. `favicon.svg` and `favicon-dark.svg` keep serving the tab's light and dark media queries, and no `.ico` fallback ships.
+
+The whale tile generator (`apps/web/scripts/render-app-icons.ts`) and its `apps/desktop/resources/icon.svg` source stay as upstream ships them, so the committed PNGs no longer match a regeneration of that source. `pwa-manifest.e2e.ts` therefore asserts the shipped bytes — declared edge, non-empty artwork, and an opaque maskable icon — instead of rendering the upstream source and comparing pixels.
 
 ## Already-on-master test
 
-Run `git grep -n -F -- 'favicon.svg' origin/master -- apps/web/index.html apps/web/public/manifest.webmanifest`. The work has landed when that search is empty, when `apps/web/public/icon-512.png` exists on `origin/master`, and when `git grep -n -F -- 'image/vnd.microsoft.icon' origin/master -- packages/host/frontend-static/src/index.ts` returns the MIME entry.
+Measure the committed PNGs rather than the generator:
+
+```sh
+git show <base>:apps/web/public/icon-512.png > /tmp/icon-512.png
+```
+
+The work has landed when `icon-512.png` and `icon-192.png` have transparent corners (alpha 0 at 0,0 and at the opposite corner), when `icon-maskable-512.png` and `apple-touch-icon.png` are opaque at those corners, and when `git grep -n -F -- 'renderAppIcons' <base> -- apps/web/tests/pwa-manifest.e2e.ts` returns nothing because that test no longer regenerates the upstream source.
