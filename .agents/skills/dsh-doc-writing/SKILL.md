@@ -94,7 +94,7 @@ After the structural pass, hunt the slop checklist with the cheapest probes firs
 
 ## Wordcount budgets
 
-`pnpm run verify-doc-budgets` compares standing documents against ceilings in [scripts/doc-budgets.manifest.json](../../../scripts/doc-budgets.manifest.json); a red gate follows the ordered relocate-condense-raise policy in [docs/AGENTS.md](../../../docs/AGENTS.md#wordcount-budgets). Ceilings are guardrails, not reduction targets: at or below target, retain at least 5% headroom; raise a ceiling only when the words need the space, and justify the manifest diff in the PR.
+`pnpm run verify-doc-budgets` compares standing documents against ceilings in [scripts/doc-budgets.manifest.json](../../../scripts/doc-budgets.manifest.json); a red gate follows the ordered relocate-condense-raise policy in [docs/AGENTS.md](../../../docs/AGENTS.md#wordcount-budgets). This repository keeps the script and manifest but omits the gate from `scripts/run-gates.ts`, so it does not run in local CI; treat the measurement as advisory here. Ceilings are guardrails, not reduction targets: at or below target, retain at least 5% headroom; raise a ceiling only when the words need the space, and justify the manifest diff in the PR.
 
 ## Website publication
 
