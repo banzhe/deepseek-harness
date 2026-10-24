@@ -26,7 +26,9 @@ from it at the Web corner radius (22% of the edge): full-bleed `icon-windows.png
 transparent-margin `icon-macos.png`, and the 16–64 px `tray-windows.ico` bitmaps.
 
 The tray no longer enlarges a vector glyph: `render-tray-icon.ts` shrinks to the ICO packer and
-parser, and the whale vectors `icon.svg`, `icon-windows.svg`, and `icon-macos.svg` are deleted.
+parser, and the platform-mark vectors `icon-windows.svg` and `icon-macos.svg` are deleted. `icon.svg`
+stays: it is the vector source the Web install-icon generator
+(`apps/web/scripts/render-app-icons.ts`) and `apps/web/tests/app-icons.spec.ts` read.
 Renderer tests reject a Windows export whose corner arc leaves the Web radius, a macOS export whose
 margin is not transparent, and a committed export that the committed source no longer reproduces.
 
@@ -36,4 +38,5 @@ Run `git grep -n -F -- 'render:icons' origin/master -- apps/desktop/package.json
 landed when that search returns the script, when
 `git grep -n -F -- 'renderApplicationIcons' origin/master -- apps/desktop/scripts/render-app-icons.ts`
 returns the renderer, and when `git show origin/master:apps/desktop/resources/icon-windows.svg`
-fails because the whale vectors are gone.
+fails because that platform-mark vector is gone. `git cat-file -e origin/master:apps/desktop/resources/icon.svg`
+must still succeed: the Web install-icon generator reads it.
