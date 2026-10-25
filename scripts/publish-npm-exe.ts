@@ -1,9 +1,10 @@
 /**
  * Publish the `@banzhe/dsh-banzhe` tarballs produced by `scripts/build-npm-exe.ts`, platform
- * packages first and the launcher package last, so an `npm install` never resolves an entry
- * version whose optional platform packages are not on the registry yet. Publication is
- * idempotent: a version whose published tarball carries the same content is skipped, so reruns
- * after a partial failure finish the remaining packages.
+ * packages first and the launcher package last. The order is the only dependency between them:
+ * `npm publish` never validates `optionalDependencies`, so the launcher is published once its
+ * platform packages have been uploaded, and registry replica lag is not waited on. Publication
+ * is idempotent: a version whose published tarball carries the same content is skipped, so
+ * reruns after a partial failure finish the remaining packages.
  */
 
 import { spawn } from 'node:child_process'
@@ -17,9 +18,6 @@ const root = resolve(import.meta.dirname, '..')
 const DEFAULT_DIR = join(root, 'dist-exe', 'npm')
 const DEFAULT_REGISTRY = 'https://registry.npmjs.org'
 const PLATFORM_SUFFIXES = ['linux-x64', 'linux-arm64', 'darwin-arm64', 'darwin-x64', 'win32-x64'] as const
-/** Bounded registry wait between the platform publications and the entry publication. */
-const PROPAGATION_TIMEOUT_MS = 600_000
-const PROPAGATION_INTERVAL_MS = 10_000
 
 /** One artifact recorded by the build script beside its tarball. */
 interface Artifact {
@@ -193,26 +191,6 @@ async function publishOne(artifact: Artifact, cli: PublishCli): Promise<'publish
   return 'published'
 }
 
-/**
- * Wait until every platform package of this version resolves on the registry. A version
- * that is published but not yet visible is a read replica lag, not a missing package, so a
- * timeout warns instead of failing the release: installs happen minutes later, not now.
- */
-async function awaitPropagation(platforms: readonly Artifact[], cli: PublishCli): Promise<void> {
-  if (cli.dryRun) return
-  const deadline = Date.now() + PROPAGATION_TIMEOUT_MS
-  for (const platform of platforms) {
-    for (;;) {
-      if (await publishedIntegrity(platform.name, platform.version, cli.registry) !== undefined) break
-      if (Date.now() > deadline) {
-        console.log(`::warning::${platform.name}@${platform.version} is published but not visible on ${cli.registry} yet; continuing`)
-        break
-      }
-      await new Promise(settle => setTimeout(settle, PROPAGATION_INTERVAL_MS))
-    }
-  }
-}
-
 function parseCli(argv: string[]): PublishCli {
   const values = parseArgs({
     args: argv,
@@ -253,7 +231,6 @@ async function main(): Promise<void> {
     fail(`only ${String(platforms.length)} of ${String(PLATFORM_SUFFIXES.length)} platform packages are present; publish every target or pass --allow-partial`)
   }
   for (const artifact of platforms) await publishOne(artifact, cli)
-  await awaitPropagation(platforms, cli)
   await publishOne(entry, cli)
   console.log(`publish-npm-exe: done; install with: npm install -g ${entry.name}@${cli.distTag}`)
 }
