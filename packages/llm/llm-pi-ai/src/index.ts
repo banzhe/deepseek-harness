@@ -89,6 +89,8 @@ export type {
   ResolvedPiAiProviderProfile,
 } from './config.ts'
 export { recordKeyFor } from './auth.ts'
+export { REQUEST_COMPRESSION_ENCODINGS } from './compression.ts'
+export type { RequestCompressionEncoding } from './compression.ts'
 export { supportedProtocols } from './provider.ts'
 
 export const name = 'llm-pi-ai'

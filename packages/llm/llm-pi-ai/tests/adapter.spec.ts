@@ -124,6 +124,47 @@ describe('PiAiAdapter provider routing', () => {
     expect(server.headers[0]?.['user-agent']).toBe(userAgent())
   })
 
+  it.each(['gzip', 'zstd'] as const)('compresses the request body as %s when the route asks for it', async (encoding) => {
+    const server = await mockServer([{ events: textEvents }])
+    const ctx = await harness(server.url, { requestCompression: encoding })
+
+    await assemble(ctx, { model: 'deepseek-flash', messages: [] })
+
+    expect(server.headers[0]?.['content-encoding']).toBe(encoding)
+    expect(server.requests[0]).toMatchObject({ model: 'deepseek-flash' })
+  })
+
+  it('sends a plain JSON body when the route configures no compression', async () => {
+    const server = await mockServer([{ events: textEvents }])
+    const ctx = await harness(server.url)
+
+    await assemble(ctx, { model: 'deepseek-flash', messages: [] })
+
+    expect(server.headers[0]?.['content-encoding']).toBeUndefined()
+  })
+
+  it('compresses an Anthropic Messages route through the same injected fetch', async () => {
+    const server = await mockServer([{ events: anthropicTextEvents }])
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: {
+        'anthropic-gateway': {
+          apiKeyEnv: 'PI_TEST_KEY',
+          api: 'anthropic-messages',
+          baseURL: server.url,
+          requestCompression: 'gzip',
+          models: [{ id: 'claude-test', contextWindow: 200_000, maxTokens: 4_096 }],
+        },
+      },
+    })
+
+    await assemble(ctx, { provider: 'anthropic-gateway', model: 'claude-test', messages: [] })
+
+    expect(server.headers[0]?.['content-encoding']).toBe('gzip')
+    expect(server.requests[0]).toMatchObject({ model: 'claude-test' })
+  })
+
   it('forwards common stream options and profile reasoning', async () => {
     const server = await mockServer([{ events: textEvents }])
     const ctx = await harness(server.url, {
