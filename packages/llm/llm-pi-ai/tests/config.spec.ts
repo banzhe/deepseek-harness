@@ -107,3 +107,35 @@ describe('request image policy bounds', () => {
     }).toThrow(message)
   })
 })
+
+describe('request compression', () => {
+  it('keeps the configured encoding on the resolved profile', () => {
+    expect(resolveProfiles({ deepseek: { requestCompression: 'zstd' } }).get('deepseek')?.requestCompression)
+      .toBe('zstd')
+  })
+
+  it('rejects an encoding outside the offered set at the write that produced it', () => {
+    expect(routeWith({ requestCompression: 'br' })).toThrow(/expected/)
+  })
+
+  it('rejects an encoding a settings update slipped past the schema', () => {
+    const providers = JSON.parse('{"deepseek":{"requestCompression":"br"}}')
+    expect(() => resolveProfiles(providers)).toThrow(/requestCompression must be "gzip" or "zstd"/)
+  })
+
+  it('refuses a route whose model cannot take the injected fetch', () => {
+    expect(() => resolveProfiles({ google: { requestCompression: 'gzip' } }))
+      .toThrow(/requestCompression, but model ".*" speaks "google-generative-ai"/)
+  })
+
+  it('retains that refusal as a route diagnostic on a stored read', () => {
+    const profile = resolveProfiles({ google: { requestCompression: 'gzip' } }, 'deferred').get('google')
+    expect(profile?.catalogError).toMatch(/requestCompression/)
+    expect(profile?.piProvider).toBeUndefined()
+  })
+
+  it('refuses compression over a WebSocket transport that bypasses fetch', () => {
+    expect(() => resolveProfiles({ deepseek: { requestCompression: 'gzip', transport: 'websocket' } }))
+      .toThrow(/bypasses the fetch/)
+  })
+})

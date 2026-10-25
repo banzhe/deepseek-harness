@@ -1,5 +1,5 @@
 import { createServer } from 'node:http'
-import { zstdDecompressSync } from 'node:zlib'
+import { gunzipSync, zstdDecompressSync } from 'node:zlib'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 
 export interface MockServer {
@@ -86,8 +86,12 @@ export async function mockServer(script: {
     request.on('data', (chunk: Buffer) => { chunks.push(chunk) })
     request.on('end', () => {
       const bytes = Buffer.concat(chunks)
-      // Codex SSE requests use zstd compression when the host supports it.
-      const body = (request.headers['content-encoding'] === 'zstd' ? zstdDecompressSync(bytes) : bytes).toString('utf8')
+      // Codex SSE requests use zstd compression when the host supports it, and a
+      // route may configure its own gzip or zstd request encoding.
+      const encoding = request.headers['content-encoding']
+      const body = (encoding === 'zstd' ? zstdDecompressSync(bytes)
+        : encoding === 'gzip' ? gunzipSync(bytes)
+          : bytes).toString('utf8')
       paths.push(request.url ?? '')
       requests.push(body.length === 0 ? undefined : JSON.parse(body))
       headers.push(request.headers)

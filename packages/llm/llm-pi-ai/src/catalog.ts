@@ -29,6 +29,7 @@ import type {
   Provider,
   ThinkingLevelMap,
 } from '@earendil-works/pi-ai'
+import { compressionProtocols, supportsRequestCompression } from './compression.ts'
 
 /**
  * Pricing for a model the installed catalog does not describe. The harness
@@ -668,6 +669,8 @@ export interface RouteCatalogRequest {
   defaultMaxTokens: number
   /** Modalities for a model neither the entry nor the catalog declares. */
   defaultInput: Model<Api>['input']
+  /** Route-level request-body compression already validated by the profile; refused here when a model's protocol cannot take it. */
+  requestCompression?: string
 }
 
 /** An expected configuration failure that stored-catalog reads may retain for repair. */
@@ -982,6 +985,17 @@ export function resolveRouteModels(
     if (serviceableModels.some(model => takers.includes(model.api))) continue
     invalid(provider, `sets compat "${field}", but no model on the route speaks a protocol that takes it;`
       + ` it exists on ${takers.join(', ')}`)
+  }
+  // Compression reaches the endpoint through an injected `fetch`, which a route
+  // default cannot narrow to part of its models: one protocol that refuses or
+  // ignores it would send a body the configuration says is compressed.
+  const uncompressed = request.requestCompression === undefined
+    ? undefined
+    : serviceableModels.find(model => !supportsRequestCompression(model.api))
+  if (uncompressed !== undefined) {
+    invalid(provider, `sets requestCompression, but model "${uncompressed.id}" speaks "${uncompressed.api}", whose`
+      + ' pi-ai implementation cannot take the injected fetch the compression is applied through;'
+      + ` it is available on ${compressionProtocols().join(', ')}`)
   }
   return { models: serviceableModels, configuredMaxTokens, modelErrors }
 }
