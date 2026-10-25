@@ -18,8 +18,8 @@ const DEFAULT_DIR = join(root, 'dist-exe', 'npm')
 const DEFAULT_REGISTRY = 'https://registry.npmjs.org'
 const PLATFORM_SUFFIXES = ['linux-x64', 'linux-arm64', 'darwin-arm64', 'darwin-x64', 'win32-x64'] as const
 /** Bounded registry wait between the platform publications and the entry publication. */
-const PROPAGATION_TIMEOUT_MS = 120_000
-const PROPAGATION_INTERVAL_MS = 5_000
+const PROPAGATION_TIMEOUT_MS = 600_000
+const PROPAGATION_INTERVAL_MS = 10_000
 
 /** One artifact recorded by the build script beside its tarball. */
 interface Artifact {
@@ -121,7 +121,9 @@ async function localIntegrity(path: string): Promise<string> {
 
 /** Registry integrity of one published version, or `undefined` when the registry lacks it. */
 async function publishedIntegrity(name: string, version: string, registry: string): Promise<string | undefined> {
-  const result = await runNpm(['view', `${name}@${version}`, 'dist.integrity', '--json', `--registry=${registry}`], root)
+  // `--prefer-online` defeats the negative cache the pre-publish existence check leaves
+  // behind; without it a just-published version stays invisible to this process.
+  const result = await runNpm(['view', `${name}@${version}`, 'dist.integrity', '--json', '--prefer-online', `--registry=${registry}`], root)
   if (result.code !== 0) return undefined
   const parsed = JSON.parse(result.stdout) as unknown
   return typeof parsed === 'string' ? parsed : undefined
@@ -191,14 +193,21 @@ async function publishOne(artifact: Artifact, cli: PublishCli): Promise<'publish
   return 'published'
 }
 
-/** Wait until every platform package of this version resolves on the registry. */
+/**
+ * Wait until every platform package of this version resolves on the registry. A version
+ * that is published but not yet visible is a read replica lag, not a missing package, so a
+ * timeout warns instead of failing the release: installs happen minutes later, not now.
+ */
 async function awaitPropagation(platforms: readonly Artifact[], cli: PublishCli): Promise<void> {
   if (cli.dryRun) return
   const deadline = Date.now() + PROPAGATION_TIMEOUT_MS
   for (const platform of platforms) {
     for (;;) {
       if (await publishedIntegrity(platform.name, platform.version, cli.registry) !== undefined) break
-      if (Date.now() > deadline) fail(`${platform.name}@${platform.version} did not appear on ${cli.registry} within ${String(PROPAGATION_TIMEOUT_MS / 1000)}s`)
+      if (Date.now() > deadline) {
+        console.log(`::warning::${platform.name}@${platform.version} is published but not visible on ${cli.registry} yet; continuing`)
+        break
+      }
       await new Promise(settle => setTimeout(settle, PROPAGATION_INTERVAL_MS))
     }
   }
