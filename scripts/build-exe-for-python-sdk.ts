@@ -68,7 +68,10 @@ const ASSET_GLOBS = [
   'node_modules/**/*.yaml',
   'node_modules/**/*.yml',
   // web-app builds this path dynamically, so pkg cannot discover the static frontend.
-  'node_modules/@deepseek-ai/dsh-web-frontend/dist/**/*',
+  // The frontend is hoisted under the CLI's own node_modules, so the pattern must find it
+  // at any depth; `**/*` needs at least one directory, hence the extra root-level pattern.
+  'node_modules/**/dsh-web-frontend/dist/*',
+  'node_modules/**/dsh-web-frontend/dist/**/*',
   // The diagnosis provider extracts its PowerShell script for an external interpreter.
   'node_modules/@deepseek-ai/dsh-sandbox-windows-acl/assets/**/*',
 ]
