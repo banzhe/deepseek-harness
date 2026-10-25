@@ -41,6 +41,8 @@ import type {
   PiAiReasoningEfforts,
   RouteCatalog,
 } from './catalog.ts'
+import { REQUEST_COMPRESSION_ENCODINGS } from './compression.ts'
+import type { RequestCompressionEncoding } from './compression.ts'
 import { buildProvider, supportedProtocols } from './provider.ts'
 
 /** Default maximum idle interval while an adapter stream read is outstanding. */
@@ -150,6 +152,14 @@ export interface PiAiProviderProfile {
   defaultInput?: PiAiModality[]
   /** Provider request headers, validated against Fetch when the profile resolves; Harness attribution wins reserved names. */
   headers?: Record<string, string>
+  /**
+   * Compression for this route's outgoing chat request bodies (default none).
+   * The harness compresses the serialized JSON itself and sends it through a
+   * `fetch` injected into pi-ai, so only a wire protocol that accepts one can
+   * honor this. WebSocket transports bypass `fetch` entirely, so naming one
+   * here is refused instead of silently sending a plain body.
+   */
+  requestCompression?: RequestCompressionEncoding
   /** Provider-neutral pi-ai reasoning level. */
   reasoning?: ModelThinkingLevel
   /** Token budgets used by reasoning providers that support them. */
@@ -335,6 +345,7 @@ const profile = z.object({
   defaultMaxTokens: z.number().step(1).min(1).default(DEFAULT_MAX_TOKENS),
   defaultInput: z.array(z.union(MODALITIES)).default([...DEFAULT_INPUT]),
   headers: z.dict(z.string()),
+  requestCompression: z.union(REQUEST_COMPRESSION_ENCODINGS),
   reasoning: z.union(THINKING_LEVELS),
   thinkingBudgets,
   cacheRetention: z.union(['none', 'short', 'long']),
@@ -426,6 +437,19 @@ export function resolveProfiles(
       throw new Error(`llm-pi-ai: provider "${provider}" has an empty displayName`)
     }
     assertValidHeaders(provider, source.headers)
+    // Widened: a dynamic config update reaches this check without schema validation.
+    const requestCompression: string | undefined = source.requestCompression
+    if (requestCompression !== undefined
+      && !REQUEST_COMPRESSION_ENCODINGS.some(encoding => encoding === requestCompression)) {
+      throw new Error(`llm-pi-ai: provider "${provider}" requestCompression must be "gzip" or "zstd"`)
+    }
+    if (requestCompression !== undefined
+      && (source.transport === 'websocket' || source.transport === 'websocket-cached')) {
+      throw new Error(
+        `llm-pi-ai: provider "${provider}" sets requestCompression with transport "${source.transport}",`
+        + ' which bypasses the fetch the compression is applied through; name an SSE transport instead',
+      )
+    }
     const streamIdleTimeoutMs = source.streamIdleTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS
     if (!Number.isFinite(streamIdleTimeoutMs)
       || streamIdleTimeoutMs <= 0
@@ -470,6 +494,7 @@ export function resolveProfiles(
         ...source.models === undefined ? {} : { models: source.models },
         ...source.modelOverrides === undefined ? {} : { modelOverrides: source.modelOverrides },
         ...source.compat === undefined ? {} : { compat: source.compat },
+        ...requestCompression === undefined ? {} : { requestCompression },
         defaultInput,
         defaultContextWindow: source.defaultContextWindow ?? DEFAULT_CONTEXT_WINDOW,
         defaultMaxTokens: source.defaultMaxTokens ?? DEFAULT_MAX_TOKENS,
