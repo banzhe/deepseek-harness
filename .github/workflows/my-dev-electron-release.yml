@@ -339,15 +339,16 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $artifacts = Join-Path $PWD 'dist-exe/npm'
           $consumer = Join-Path $env:RUNNER_TEMP 'npm-exe-consumer'
-          $home = Join-Path $env:RUNNER_TEMP 'npm-exe-home'
-          New-Item -ItemType Directory -Force -Path $consumer, $home | Out-Null
+          # `$home` is PowerShell's read-only $HOME; the harness home is a separate name.
+          $dshHome = Join-Path $env:RUNNER_TEMP 'npm-exe-home'
+          New-Item -ItemType Directory -Force -Path $consumer, $dshHome | Out-Null
           Set-Location $consumer
           npm init --yes | Out-Null
           npm install --omit=optional --no-audit --no-fund `
             "file:$artifacts/banzhe-dsh-banzhe-$env:VERSION.tgz" `
             "file:$artifacts/banzhe-dsh-banzhe-$env:SUFFIX-$env:VERSION.tgz"
           $shim = Join-Path $consumer 'node_modules/.bin/dsh-banzhe.cmd'
-          $version = (& $shim --version | Select-Object -Last 1)
+          $version = "$(& $shim --version | Select-Object -Last 1)".Trim()
           Write-Host "packaged version: $version"
           if ($version -ne $env:PRODUCT_VERSION) {
             Write-Error "packaged --version '$version' does not match $env:PRODUCT_VERSION"
