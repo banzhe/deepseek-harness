@@ -160,23 +160,12 @@ jobs:
     timeout-minutes: 5
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
-      version: ${{ steps.version.outputs.version }}
-      product-version: ${{ steps.product.outputs.product-version }}
+      complete: ${{ steps.plan.outputs.complete }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
           clean: true
-      - name: Resolve release version
-        id: version
-        run: node .github/workflows/prepare-my-dev-npm.mjs
-      - name: Resolve the embedded CLI version
-        id: product
-        run: |
-          set -euo pipefail
-          # The packaged executable reports the dsh product version, which the npm
-          # package version extends with the release's date and run identity.
-          echo "product-version=$(node -p "require('./apps/cli/package.json').version")" >> "$GITHUB_OUTPUT"
       - name: Compute matrix from targets input
         id: plan
         env:
@@ -211,6 +200,9 @@ jobs:
           fi
           echo "Matrix: $matrix"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          # Publishing needs every platform package; a partial dispatch still builds and
+          # smokes what it selected but leaves the registry alone.
+          echo "complete=$([ "$(jq 'length' <<< "$matrix")" = '5' ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
   npm-exe:
     needs: npm-plan
@@ -224,8 +216,6 @@ jobs:
     env:
       DSH_TELEMETRY_DISABLED: '1'
       DSH_BUILD_CLIENT_PROFILE: official
-      VERSION: ${{ needs.npm-plan.outputs.version }}
-      PRODUCT_VERSION: ${{ needs.npm-plan.outputs.product-version }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -247,6 +237,16 @@ jobs:
             [ "$attempt" -lt 3 ] && sleep 10
           done
           exit 1
+      - name: Resolve release version
+        id: version
+        # Reads the desktop build-version helper, which needs the installed dependency tree.
+        run: node .github/workflows/prepare-my-dev-npm.mjs
+      - name: Resolve the embedded CLI version
+        id: product
+        # The packaged executable reports the dsh product version, which the npm package
+        # version extends with the release's date and run identity.
+        run: >-
+          node -e "const fs=require('node:fs');const v=require('./apps/cli/package.json').version;fs.appendFileSync(process.env.GITHUB_OUTPUT,'product-version='+v+'\n')"
       - uses: actions/cache@v6.1.0
         with:
           path: ~/.pkg-cache
@@ -293,11 +293,13 @@ jobs:
       - name: Build the npm single-executable packages
         run: >-
           pnpm exec tsx scripts/build-npm-exe.ts --targets=${{ matrix.target }}
-          --version=${{ needs.npm-plan.outputs.version }}
+          --version=${{ steps.version.outputs.version }}
       - name: Smoke the packed executable (POSIX)
         if: runner.os != 'Windows'
         env:
           SUFFIX: ${{ matrix.suffix }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PRODUCT_VERSION: ${{ steps.product.outputs.product-version }}
         run: |
           set -euo pipefail
           artifacts="$PWD/dist-exe/npm"
@@ -331,6 +333,8 @@ jobs:
         shell: pwsh
         env:
           SUFFIX: ${{ matrix.suffix }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PRODUCT_VERSION: ${{ steps.product.outputs.product-version }}
         run: |
           $ErrorActionPreference = 'Stop'
           $artifacts = Join-Path $PWD 'dist-exe/npm'
@@ -360,7 +364,9 @@ jobs:
 
   npm-publish:
     needs: [npm-plan, npm-exe]
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/my_dev'
+    if: >-
+      (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/my_dev')
+      && needs.npm-plan.outputs.complete == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: npm-publish
