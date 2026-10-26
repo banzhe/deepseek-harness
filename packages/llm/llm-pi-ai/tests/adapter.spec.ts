@@ -157,6 +157,53 @@ describe('PiAiAdapter provider routing', () => {
     expect(server.headers[0]?.['content-encoding']).toBeUndefined()
   })
 
+  it('reports one request’s transport facts through the llm/transport event', async () => {
+    const server = await mockServer([{ events: textEvents }])
+    const ctx = await harness(server.url, { requestCompression: 'zstd' })
+    const facts: LlmPiAi.RequestTransportFacts[] = []
+    ctx.on('llm/transport', (received) => { facts.push(received) })
+
+    await assemble(ctx, { model: 'deepseek-flash', messages: [], sessionId: SessionId('measured-session') })
+
+    expect(facts).toHaveLength(1)
+    const fact = facts[0]
+    expect(fact).toMatchObject({
+      provider: 'deepseek',
+      model: 'deepseek-flash',
+      sessionId: 'measured-session',
+      encoding: 'zstd',
+    })
+    // The compressed body is what reached the wire, and the framing stayed a byte body.
+    expect(fact?.sentBytes).toBeLessThan(fact?.requestBytes ?? 0)
+    expect(server.headers[0]?.['content-length']).toBe(String(fact?.sentBytes))
+    expect(server.headers[0]?.['transfer-encoding']).toBeUndefined()
+  })
+
+  it('measures a route that sends a plain body and carries an auxiliary purpose', async () => {
+    const server = await mockServer([{ events: textEvents }])
+    const ctx = await harness(server.url)
+    const facts: LlmPiAi.RequestTransportFacts[] = []
+    ctx.on('llm/transport', (received) => { facts.push(received) })
+
+    await assemble(ctx, { model: 'deepseek-flash', messages: [], purpose: 'compaction' })
+
+    expect(facts).toHaveLength(1)
+    const fact = facts[0]
+    expect(fact).toMatchObject({ provider: 'deepseek', model: 'deepseek-flash', purpose: 'compaction' })
+    expect(fact?.encoding).toBeUndefined()
+    expect(fact?.sessionId).toBeUndefined()
+    expect(fact?.requestBytes).toBe(fact?.sentBytes)
+  })
+
+  it('keeps the request alive when a transport observer throws', async () => {
+    const server = await mockServer([{ events: textEvents }])
+    const ctx = await harness(server.url)
+    ctx.on('llm/transport', () => { throw new Error('observer failed') })
+
+    await expect(assemble(ctx, { model: 'deepseek-flash', messages: [] }))
+      .resolves.toMatchObject({ finish: { kind: 'stop' } })
+  })
+
   it('compresses an Anthropic Messages route through the same injected fetch', async () => {
     const server = await mockServer([{ events: anthropicTextEvents }])
     const ctx = new Context()
