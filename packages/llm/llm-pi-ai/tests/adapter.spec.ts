@@ -12,6 +12,7 @@ import type {
 import LlmRuntime, { createToolResultMessage, createUserMessage, CONTEXT_WINDOW_EXCEEDED_CODE, LlmError, ReasoningEffortId, userAgent } from '@deepseek-ai/dsh-llm'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all'
 import { DEFAULT_MAX_REQUEST_IMAGE_BYTES, resolveProfiles } from '../src/config.ts'
@@ -122,6 +123,19 @@ describe('PiAiAdapter provider routing', () => {
     await assemble(ctx, { model: 'deepseek-flash', messages: [] })
     expect(server.headers[0]?.['x-company']).toBe('private')
     expect(server.headers[0]?.['user-agent']).toBe(userAgent())
+  })
+
+  it('sends Harness session attribution on a route without provider affinity support', async () => {
+    const server = await mockServer([{ events: textEvents }, { events: textEvents }])
+    const ctx = await harness(server.url)
+
+    await assemble(ctx, { model: 'deepseek-flash', messages: [], sessionId: SessionId('session-for-pi') })
+    expect(server.headers[0]?.['x-deepseek-harness-session-id']).toBe('session-for-pi')
+    expect(server.headers[0]?.['x-deepseek-harness-compact']).toBeUndefined()
+
+    await assemble(ctx, { model: 'deepseek-flash', messages: [], purpose: 'compaction' })
+    expect(server.headers[1]?.['x-deepseek-harness-session-id']).toBeUndefined()
+    expect(server.headers[1]?.['x-deepseek-harness-compact']).toBe('1')
   })
 
   it.each(['gzip', 'zstd'] as const)('compresses the request body as %s when the route asks for it', async (encoding) => {

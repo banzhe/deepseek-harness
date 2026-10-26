@@ -463,7 +463,15 @@ export class PiAiAdapter extends LlmAdapter {
         ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },
         ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
         signal: watchdog.signal,
-        headers: requestHeaders(profile.headers, options, model.baseUrl, this.config.prepareHeaders),
+        // Profile headers are deployment-owned; attribution names are
+        // Harness-owned and therefore win collisions. pi-ai merges these
+        // options headers last, which is also what carries session
+        // attribution past its provider-specific affinity gate.
+        headers: {
+          ...requestHeaders(profile.headers, options, model.baseUrl, this.config.prepareHeaders),
+          ...options.sessionId === undefined ? {} : { 'x-deepseek-harness-session-id': String(options.sessionId) },
+          ...options.purpose === 'compaction' ? { 'x-deepseek-harness-compact': '1' } : {},
+        },
       })
       const iterator = toStreamChunks(events, model.contextWindow, options.signal, model.id)[Symbol.asyncIterator]()
       let exhausted = false
