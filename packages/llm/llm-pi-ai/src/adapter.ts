@@ -59,7 +59,8 @@ import type {
 import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
-import { compressingFetch } from './compression.ts'
+import { compressingFetch, supportsRequestCompression } from './compression.ts'
+import type { RequestTransportFacts } from './compression.ts'
 import { requestImageTarget, toPiContext } from './context.ts'
 import { conversationUpdates, createModels, getSupportedThinkingLevels } from './models.ts'
 import { toStreamChunks } from './stream.ts'
@@ -136,6 +137,13 @@ export interface PiAiAdapterOptions {
    * conversation report them again.
    */
   onThinkingOmitted?: (detail: { provider: string; model: string; count: number }) => void
+  /**
+   * Observe one request's transport facts — upload and response times, request
+   * body size before and after compression — once its response headers arrived.
+   * Absent leaves the request unmeasured; a route whose protocol cannot take an
+   * injected `fetch` is never measured at all. The callback must not throw.
+   */
+  onTransport?: (facts: RequestTransportFacts) => void
 }
 
 /** The two auth injectables a pi-ai collection is built with. */
@@ -151,6 +159,7 @@ function profileOptions(
   profile: ResolvedPiAiProviderProfile,
   reasoning: ModelThinkingLevel | undefined,
   apiKey: string | undefined,
+  transport: typeof globalThis.fetch | undefined,
 ): SimpleStreamOptions {
   const enabledReasoning: ThinkingLevel | undefined = reasoning === 'off' ? undefined : reasoning
   return {
@@ -159,7 +168,7 @@ function profileOptions(
     ...profile.thinkingBudgets === undefined ? {} : { thinkingBudgets: profile.thinkingBudgets },
     ...profile.cacheRetention === undefined ? {} : { cacheRetention: profile.cacheRetention },
     ...profile.transport === undefined ? {} : { transport: profile.transport },
-    ...profile.requestCompression === undefined ? {} : { fetch: compressingFetch(profile.requestCompression) },
+    ...transport === undefined ? {} : { fetch: transport },
     ...profile.timeoutMs === undefined ? {} : { timeoutMs: profile.timeoutMs },
     ...profile.websocketConnectTimeoutMs === undefined ? {} : { websocketConnectTimeoutMs: profile.websocketConnectTimeoutMs },
     // The agent recovery layer owns visible attempts; one adapter call is one SDK attempt.
@@ -474,8 +483,23 @@ export class PiAiAdapter extends LlmAdapter {
       const { context, digest } = bindThinkingToPrefix(converted, model.api, prefixDigests, manualThinking, (count) => {
         this.config.onThinkingOmitted?.({ provider: options.provider, model: options.model, count })
       })
+      // One transport per stream call: it carries this route's compression and
+      // measures this attempt only. A protocol that refuses an injected fetch
+      // gets none, so its requests stay exactly as pi-ai sends them.
+      const onTransport = this.config.onTransport
+      const transport = supportsRequestCompression(model.api)
+        ? compressingFetch(profile.requestCompression, onTransport === undefined ? undefined : (observation) => {
+          onTransport({
+            ...observation,
+            ...options.sessionId === undefined ? {} : { sessionId: options.sessionId },
+            ...options.purpose === undefined ? {} : { purpose: options.purpose },
+            provider: options.provider,
+            model: options.model,
+          })
+        })
+        : undefined
       const events = snapshot.models.streamSimple(model, context, {
-        ...profileOptions(profile, reasoning, apiKey),
+        ...profileOptions(profile, reasoning, apiKey, transport),
         ...options.temperature === undefined ? {} : { temperature: options.temperature },
         ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },
         ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },

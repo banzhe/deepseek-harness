@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Estatísticas de rede do LLM",
+    "description": "Métricas de transporte por solicitação do LLM: tempo de envio, espera pelos cabeçalhos de resposta e compressão do corpo."
+  }
+}
