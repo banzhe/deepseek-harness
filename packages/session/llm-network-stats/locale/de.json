@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "LLM-Netzwerkstatistik",
+    "description": "Transportwerte je LLM-Anfrage: Uploadzeit, Warten auf die Antwort-Header und Komprimierung des Anfragetexts."
+  }
+}
