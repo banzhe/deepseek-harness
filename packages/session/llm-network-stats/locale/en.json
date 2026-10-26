@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "llm-network-stats",
+    "description": "Per-request LLM transport figures: upload time, response-header wait, and request-body compression."
+  }
+}

@@ -1,0 +1,58 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/session/llm-network-stats/README.md
+/:
+  en: 7d0c63b9ffdcb15e
+  zh: cefb1776b85a109e
+/deepseek-ai-dsh-llm-network-stats:
+  en: 2b73f34086f051f1
+  zh: 6cb2bc0a27318c95
+/deepseek-ai-dsh-llm-network-stats/summary:
+  en: ddc0352a71b5a887
+  zh: 7e836235a382d072
+/deepseek-ai-dsh-llm-network-stats/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 3a2f21ff0dc3420d
+/deepseek-ai-dsh-llm-network-stats/use-this-package:
+  en: 517d3f2d53e77165
+  zh: 00f4d7e71d55ffa7
+/deepseek-ai-dsh-llm-network-stats/use-this-package/composition:
+  en: 1ff253c3946b4ebe
+  zh: 103f66630a01e5f8
+/deepseek-ai-dsh-llm-network-stats/use-this-package/what-the-figures-mean:
+  en: 5bcefed8d6d6a916
+  zh: cb953a34ceb16525
+/deepseek-ai-dsh-llm-network-stats/use-this-package/failures-and-recovery:
+  en: a2aef098b7ffa373
+  zh: ad4f0abc32fd330c
+/deepseek-ai-dsh-llm-network-stats/understand-the-implementation:
+  en: 5ff52cd012b71778
+  zh: 879137a79148bae6
+/deepseek-ai-dsh-llm-network-stats/understand-the-implementation/design-concept:
+  en: da26d0036a9fe8bb
+  zh: 29662b17268414d1
+/deepseek-ai-dsh-llm-network-stats/understand-the-implementation/source-map:
+  en: 59d35483ba9a365f
+  zh: 294745ec348ce3b7
+/deepseek-ai-dsh-llm-network-stats/understand-the-implementation/data-model:
+  en: f4c9660895c31680
+  zh: 81b50c694a4c13f9
+/deepseek-ai-dsh-llm-network-stats/understand-the-implementation/fold-rules:
+  en: da6bfdd49f55da67
+  zh: ccb8d54090b13ea9
+/deepseek-ai-dsh-llm-network-stats/further-exploration:
+  en: 09b488124f813f43
+  zh: 1262a4e51522bf74
+/deepseek-ai-dsh-llm-network-stats/model-experience:
+  en: c94e66ef2240d893
+  zh: 83cbb44a670ae4ce
+/deepseek-ai-dsh-llm-network-stats/model-experience/kv-cache-effect:
+  en: 47f982e326fe77fd
+  zh: 825cce1a75e62682
+/deepseek-ai-dsh-llm-network-stats/known-limitations-and-deferred-work:
+  en: 1f746dda28b01d33
+  zh: 5615b36fce0fb1ac
+/deepseek-ai-dsh-llm-network-stats/known-limitations-and-deferred-work/dev-note:
+  en: e67f633dc6fe7773
+  zh: e88aeb617ffb74ea

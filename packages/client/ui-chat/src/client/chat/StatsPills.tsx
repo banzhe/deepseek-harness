@@ -11,6 +11,8 @@ import type { UseProjection } from '@deepseek-ai/dsh-api-session-controller/clie
 import type { InjectFace, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: merges the sessionStats key into SessionProjectionMap for useProjection.
 import type {} from '@deepseek-ai/dsh-session-stats/client'
+// Type-only: merges the llmNetworkStats key into SessionProjectionMap for useProjection.
+import type {} from '@deepseek-ai/dsh-llm-network-stats/client'
 import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
 import type { ChatViewSlotProps, PerformanceUsageInjected } from '../contract/slots.ts'
 import type { ChatSnapshot } from '../contract/snapshot.ts'
@@ -109,6 +111,41 @@ export function formatDuration(ms: number, t: ChatViewSlotProps['t']): string {
 }
 
 /**
+ * Byte size with a binary unit: 512 B / 12.4 KB / 2.1 MB / 1.2 GB.
+ * @param bytes - non-negative byte count.
+ * @param t - Chat locale seat.
+ * @returns locale-owned size reading.
+ */
+export function formatBytes(bytes: number, t: ChatViewSlotProps['t']): string {
+  const scaled = (value: number): string => String(Math.round(value * 10) / 10)
+  if (bytes < 1_024) return t('stats.network.bytes', { value: String(bytes) })
+  if (bytes < 1_048_576) return t('stats.network.kilobytes', { value: scaled(bytes / 1_024) })
+  if (bytes < 1_073_741_824) return t('stats.network.megabytes', { value: scaled(bytes / 1_048_576) })
+  return t('stats.network.gigabytes', { value: scaled(bytes / 1_073_741_824) })
+}
+
+/**
+ * Sub-second spans read in milliseconds; longer ones use the compact duration form.
+ * @param ms - non-negative duration in milliseconds.
+ * @param t - Chat locale seat.
+ * @returns locale-owned duration reading.
+ */
+export function formatLatency(ms: number, t: ChatViewSlotProps['t']): string {
+  return ms < 1_000 ? t('duration.milliseconds', { milliseconds: Math.round(ms) }) : formatDuration(ms, t)
+}
+
+/**
+ * Compression ratio as whole percent — the sent size over the original.
+ * @param sentBytes - bytes written to the wire.
+ * @param requestBytes - bytes before compression.
+ * @returns whole-percent text, or '100' when there was no body to compress.
+ */
+export function compressionPercent(sentBytes: number, requestBytes: number): string {
+  if (requestBytes <= 0) return '100'
+  return String(Math.round(sentBytes / requestBytes * 100))
+}
+
+/**
  * Display-ready cache-hit share of prompt-side input over the whole durable log.
  * @param usage - the session's token-usage projection value.
  * @returns integer text when integer rounding stays below 100, otherwise the
@@ -167,6 +204,11 @@ function reading(first: string, second: string | null): Pick<PillContent, 'label
     ),
     text: `${first} · ${second}`,
   }
+}
+
+/** One metric's last-request and whole-session readings, in one row. */
+function lastAverage(last: string, average: string, t: Translate): string {
+  return t('stats.network.lastAverage', { last, average })
 }
 
 // Every figure rides the durable sessionStats projection, so paging and
@@ -277,15 +319,21 @@ function DialogPill({ stat, icon, label, text, title, titleValue, children }: Pi
 export const ActivityPill = memo(function ActivityPill({ useChat, useProjection, usePerformanceUsage, t }: StatPillProps) {
   const mode = usePerformanceUsage(value => value)
   const stats = useSessionStats(useChat, useProjection)
+  // Absent until the llm-network-stats plugin is mounted beside the projection
+  // registry, so an assembly without it renders exactly the rows it did before.
+  const network = useProjection('llmNetworkStats')
+  const lastRequest = network !== undefined && network.requests > 0 ? network.last : null
   const speed = stats.decodeMs > 0 ? decodeSpeed(stats, t) : null
   const icon = <IconGaugeOutlineRegular />
   if (mode === 'compact') return speed === null ? null : <PlainPill stat="activity" icon={icon} {...reading(speed, null)} />
   if (stats.steps === 0) return null
   const counts = t('stats.counts', { turns: stats.turns, steps: stats.steps })
   const content: PillContent = { stat: 'activity', icon, ...reading(counts, speed) }
-  // A window without one timed figure has no dialog rows to show, so the pill
+  // A session without one timed figure has no dialog rows to show, so the pill
   // stays a plain reading instead of a button opening an empty dialog.
-  if (stats.llmMs <= 0 && stats.toolMs <= 0 && stats.ttftSteps <= 0 && speed === null) return <PlainPill {...content} />
+  if (stats.llmMs <= 0 && stats.toolMs <= 0 && stats.ttftSteps <= 0 && speed === null && lastRequest === null) {
+    return <PlainPill {...content} />
+  }
   return (
     // The counts head the dialog, so a cut-off reading stays complete once the dialog opens.
     <DialogPill {...content} title={t('stats.dialog.title')} titleValue={counts}>
@@ -320,8 +368,37 @@ export const ActivityPill = memo(function ActivityPill({ useChat, useProjection,
             )}
           </>
         )}
+        {network !== undefined && lastRequest !== null && (
+          <>
+            <dt>{t('stats.dialog.networkUpload')}</dt>
+            <dd>{lastAverage(
+              formatLatency(lastRequest.uploadMs, t),
+              formatLatency(network.uploadMs / network.requests, t),
+              t,
+            )}</dd>
+            <dt>{t('stats.dialog.networkResponse')}</dt>
+            <dd>{lastAverage(
+              formatLatency(lastRequest.responseMs, t),
+              formatLatency(network.responseMs / network.requests, t),
+              t,
+            )}</dd>
+            {/* Only a route that compressed something has sizes to compare. */}
+            {network.compressedRequests > 0 && (
+              <>
+                <dt>{t('stats.dialog.networkCompression')}</dt>
+                <dd>{t('stats.network.compressionReading', {
+                  lastBefore: formatBytes(lastRequest.requestBytes, t),
+                  lastAfter: formatBytes(lastRequest.sentBytes, t),
+                  lastPercent: compressionPercent(lastRequest.sentBytes, lastRequest.requestBytes),
+                  averagePercent: compressionPercent(network.sentBytes, network.requestBytes),
+                })}</dd>
+              </>
+            )}
+          </>
+        )}
       </dl>
       {speed !== null && <p className={dialogCss.note}>{t('stats.dialog.speedNote')}</p>}
+      {lastRequest !== null && <p className={dialogCss.note}>{t('stats.dialog.networkNote')}</p>}
     </DialogPill>
   )
 })
