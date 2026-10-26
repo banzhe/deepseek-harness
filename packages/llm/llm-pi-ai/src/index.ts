@@ -67,6 +67,7 @@ import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import { PiAiAdapter } from './adapter.ts'
 import { authContextFrom, credentialStoreFrom } from './auth.ts'
 import { catalogProvider, catalogProviderIds } from './catalog.ts'
+import type { RequestTransportFacts } from './compression.ts'
 import { assertServiceable, Config, resolveProfiles } from './config.ts'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { discoverModels } from './discovery.ts'
@@ -90,8 +91,27 @@ export type {
 } from './config.ts'
 export { recordKeyFor } from './auth.ts'
 export { REQUEST_COMPRESSION_ENCODINGS } from './compression.ts'
-export type { RequestCompressionEncoding } from './compression.ts'
+export type {
+  RequestCompressionEncoding,
+  RequestTransportFacts,
+  RequestTransportObservation,
+} from './compression.ts'
 export { supportedProtocols } from './provider.ts'
+
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /**
+     * One request answered with response headers, carrying the transport facts
+     * of that attempt: how long its body took to leave, how long the response
+     * headers took to arrive, and what compression did to the body. Emitted for
+     * every route whose protocol accepts an injected `fetch`; a route whose
+     * protocol refuses one is never measured.
+     * @mode emit
+     * @param facts - transport facts of the request that just answered.
+     */
+    'llm/transport'(facts: RequestTransportFacts): void
+  }
+}
 
 export const name = 'llm-pi-ai'
 export const inject = ['llm']
@@ -231,6 +251,15 @@ export function apply(ctx: Context, config: Config): void {
         `llm-pi-ai: unusable replay state on assistant history for route "${provider}/${model}";`
         + ` sending that message as provider-neutral content (${reason})`,
       )
+    },
+    onTransport: (facts) => {
+      try {
+        ctx.emit('llm/transport', facts)
+      } catch (error: unknown) {
+        // An observer must never fail the request it observes.
+        ctx.logger.warn('llm-pi-ai: an llm/transport observer failed')
+        ctx.logger.warn(error)
+      }
     },
   })
   // Independent of the route set: signing in is what makes a route worth

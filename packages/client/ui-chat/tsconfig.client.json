@@ -43,6 +43,9 @@
       "path": "../../core/session"
     },
     {
+      "path": "../../experimental/llm-network-stats"
+    },
+    {
       "path": "../../interaction/commands"
     },
     {

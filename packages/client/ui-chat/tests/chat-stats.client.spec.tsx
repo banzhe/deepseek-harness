@@ -9,7 +9,16 @@ import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-tes
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { PartialArguments } from '@deepseek-ai/dsh-util-values'
-import { ActivityPill, UsagePill, deriveStats, formatDuration, type StatPillProps } from '../src/client/chat/StatsPills.tsx'
+import {
+  ActivityPill,
+  UsagePill,
+  compressionPercent,
+  deriveStats,
+  formatBytes,
+  formatDuration,
+  formatLatency,
+  type StatPillProps,
+} from '../src/client/chat/StatsPills.tsx'
 import { formatTokens } from '../src/client/chat/token-format.ts'
 import { en, zh } from '../src/client/locale.ts'
 import { chatSnapshotFixture } from './chat-snapshot-fixture.client.ts'
@@ -136,6 +145,23 @@ describe('formatters', () => {
     expect(formatDuration(45_230, tEn)).toBe('45.2s')
     expect(formatDuration(162_000, tEn)).toBe('2m42s')
   })
+
+  it('formats byte sizes with a binary unit', () => {
+    expect(formatBytes(512, tEn)).toBe('512 B')
+    expect(formatBytes(12_400, tEn)).toBe('12.1 KB')
+    expect(formatBytes(2_100_000, tEn)).toBe('2 MB')
+    expect(formatBytes(1_288_490_188, tEn)).toBe('1.2 GB')
+  })
+
+  it('formats sub-second spans in milliseconds and longer ones compactly', () => {
+    expect(formatLatency(320, tEn)).toBe('320ms')
+    expect(formatLatency(2_500, tEn)).toBe('2.5s')
+  })
+
+  it('rounds a compression ratio to whole percent', () => {
+    expect(compressionPercent(1_000, 4_000)).toBe('25')
+    expect(compressionPercent(0, 0)).toBe('100')
+  })
 })
 
 describe('composer stats pills', () => {
@@ -153,6 +179,20 @@ describe('composer stats pills', () => {
   /** Stub the projection seat: a key-addressed table of whole values. */
   function projections(values: Record<string, unknown>): StatPillProps['useProjection'] {
     return (key: string) => values[key]
+  }
+
+  /** A whole-log llmNetworkStats value: zeros plus overrides. */
+  function networkStats(overrides: Record<string, unknown>): Record<string, unknown> {
+    return {
+      requests: 0,
+      uploadMs: 0,
+      responseMs: 0,
+      requestBytes: 0,
+      sentBytes: 0,
+      compressedRequests: 0,
+      last: null,
+      ...overrides,
+    }
   }
 
   function props(
@@ -520,6 +560,82 @@ describe('composer stats pills', () => {
     expect(dialog.textContent).toContain('Tool time1m2s')
     expect(dialog.textContent).toContain('Avg time to first token (TTFT)0.8s')
     expect(dialog.textContent).toContain('Decode speed (TPS)20 tok/s')
+  })
+
+  it('renders the transport rows with the last reading and the session average', () => {
+    const { source } = makeSource({ nodes: [assistant(1, 1)] })
+    const view = render(<StatsPills {...props(source, {
+      tokenUsage: USAGE,
+      sessionStats: sessionStats({ turns: 1, steps: 1, llmMs: 4_000 }),
+      llmNetworkStats: networkStats({
+        requests: 2,
+        uploadMs: 3_000,
+        responseMs: 1_000,
+        requestBytes: 8_000,
+        sentBytes: 2_000,
+        compressedRequests: 2,
+        last: { uploadMs: 2_000, responseMs: 400, requestBytes: 6_000, sentBytes: 1_500, encoding: 'zstd' },
+      }),
+    })} />)
+    fireEvent.click(view.getAllByRole('button')[0]!)
+    const dialog = view.getByRole('dialog')
+    expect(dialog.textContent).toContain('Network upload timeLast 2s · Avg 1.5s')
+    expect(dialog.textContent).toContain('Server response timeLast 400ms · Avg 500ms')
+    expect(dialog.textContent).toContain('Request body compressionLast 5.9 KB→1.5 KB (25%) · Avg 25%')
+    expect(dialog.textContent).toContain('the cost of uploading the conversation itself')
+  })
+
+  it('hides the compression row for a session that never compressed a body', () => {
+    const { source } = makeSource({ nodes: [assistant(1, 1)] })
+    const view = render(<StatsPills {...props(source, {
+      tokenUsage: USAGE,
+      sessionStats: sessionStats({ turns: 1, steps: 1 }),
+      llmNetworkStats: networkStats({
+        requests: 1,
+        uploadMs: 2_000,
+        responseMs: 400,
+        requestBytes: 6_000,
+        sentBytes: 6_000,
+        last: { uploadMs: 2_000, responseMs: 400, requestBytes: 6_000, sentBytes: 6_000 },
+      }),
+    })} />)
+    fireEvent.click(view.getAllByRole('button')[0]!)
+    const dialog = view.getByRole('dialog')
+    expect(dialog.textContent).toContain('Network upload time')
+    expect(dialog.textContent).not.toContain('Request body compression')
+  })
+
+  it('opens the dialog for a session whose only figures are transport ones', () => {
+    const { source } = makeSource()
+    const view = render(<StatsPills {...props(source, {
+      tokenUsage: { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      sessionStats: sessionStats({ turns: 1, steps: 1 }),
+      llmNetworkStats: networkStats({
+        requests: 1,
+        uploadMs: 2_000,
+        responseMs: 400,
+        requestBytes: 6_000,
+        sentBytes: 1_500,
+        compressedRequests: 1,
+        last: { uploadMs: 2_000, responseMs: 400, requestBytes: 6_000, sentBytes: 1_500, encoding: 'gzip' },
+      }),
+    })} />)
+    const pill = view.getAllByRole('button')[0]!
+    expect(pill.textContent).toBe('1 turns 1 steps')
+    fireEvent.click(pill)
+    expect(view.getByRole('dialog').textContent).toContain('Network upload timeLast 2s · Avg 2s')
+  })
+
+  it('leaves the dialog unchanged without the llmNetworkStats projection', () => {
+    const { source } = makeSource({ nodes: [assistant(1, 1)] })
+    const view = render(<StatsPills {...props(source, {
+      tokenUsage: USAGE,
+      sessionStats: sessionStats({ turns: 1, steps: 1, llmMs: 4_000 }),
+    })} />)
+    fireEvent.click(view.getAllByRole('button')[0]!)
+    const dialog = view.getByRole('dialog')
+    expect(dialog.textContent).toContain('LLM time4s')
+    expect(dialog.textContent).not.toContain('Network upload time')
   })
 
   it('omits the cache-hit segment when nothing was billed on the input side', () => {

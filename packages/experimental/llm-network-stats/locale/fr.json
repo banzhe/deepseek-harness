@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Statistiques réseau du LLM",
+    "description": "Mesures de transport du LLM par requête : temps d’envoi, attente des en-têtes de réponse et compression du corps."
+  }
+}
