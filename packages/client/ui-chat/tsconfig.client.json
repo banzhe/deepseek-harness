@@ -43,7 +43,7 @@
       "path": "../../core/session"
     },
     {
-      "path": "../../experimental/llm-network-stats"
+      "path": "../../session/llm-network-stats"
     },
     {
       "path": "../../interaction/commands"

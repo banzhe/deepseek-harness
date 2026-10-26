@@ -16,7 +16,7 @@ import Include from '@deepseek-ai/cordis-plugin-include'
 import type {} from '@deepseek-ai/dsh-llm-pi-ai'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
-import * as LlmNetworkStats from '@deepseek-ai/dsh-experimental-llm-network-stats'
+import * as LlmNetworkStats from '@deepseek-ai/dsh-llm-network-stats'
 
 let root: string | undefined
 let context: Context | undefined
@@ -40,7 +40,7 @@ async function loadYaml(lines: readonly string[]): Promise<Context> {
   const modules = new Map<string, unknown>([
     ['@deepseek-ai/dsh-session', SessionStore],
     ['@deepseek-ai/dsh-session-projection', SessionProjectionRegistry],
-    ['@deepseek-ai/dsh-experimental-llm-network-stats', LlmNetworkStats],
+    ['@deepseek-ai/dsh-llm-network-stats', LlmNetworkStats],
   ])
   const internal: ModuleLoaderV2 = {
     version: 'v2',
@@ -68,7 +68,7 @@ describe('real Loader composition', () => {
     const loaded = await loadYaml([
       "- name: '@deepseek-ai/dsh-session'",
       "- name: '@deepseek-ai/dsh-session-projection'",
-      "- name: '@deepseek-ai/dsh-experimental-llm-network-stats'",
+      "- name: '@deepseek-ai/dsh-llm-network-stats'",
     ])
 
     const unloaded = [...loaded.loader.entries()]

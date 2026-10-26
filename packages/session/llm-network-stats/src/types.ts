@@ -5,7 +5,7 @@
  * can project it without reaching the session store, the projection registry,
  * or zod.
  *
- * @module @deepseek-ai/dsh-experimental-llm-network-stats/types
+ * @module @deepseek-ai/dsh-llm-network-stats/types
  */
 
 import type { SessionProjectionSummaryExcluded } from '@deepseek-ai/dsh-session-projection/types'
@@ -86,7 +86,7 @@ declare module '@deepseek-ai/dsh-session/types' {
   interface PluginRecordMap {
     /**
      * Transport figures one LLM request reported once its response headers
-     * arrived, written by `@deepseek-ai/dsh-experimental-llm-network-stats`.
+     * arrived, written by `@deepseek-ai/dsh-llm-network-stats`.
      * Absent for a route whose protocol refuses an injected fetch, and for a
      * request outside any Session.
      */

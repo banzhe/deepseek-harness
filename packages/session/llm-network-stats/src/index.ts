@@ -11,7 +11,7 @@
  * request that already succeeded, so a record that cannot be written is
  * reported and dropped rather than failing the request that produced it.
  *
- * @module @deepseek-ai/dsh-experimental-llm-network-stats
+ * @module @deepseek-ai/dsh-llm-network-stats
  */
 
 import type { Context } from '@deepseek-ai/cordis'

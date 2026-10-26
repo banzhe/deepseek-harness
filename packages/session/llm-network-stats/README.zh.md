@@ -3,7 +3,7 @@ description: "按请求统计 LLM 传输指标，供组合或排查 llmNetworkSt
 kind: "package-reference"
 ---
 
-# @deepseek-ai/dsh-experimental-llm-network-stats
+# @deepseek-ai/dsh-llm-network-stats
 
 [English](README.md) | 中文
 
@@ -32,7 +32,7 @@ kind: "package-reference"
 ```yaml
 - name: '@deepseek-ai/dsh-session'
 - name: '@deepseek-ai/dsh-session-projection'
-- name: '@deepseek-ai/dsh-experimental-llm-network-stats'
+- name: '@deepseek-ai/dsh-llm-network-stats'
 ```
 
 ### 各字段含义

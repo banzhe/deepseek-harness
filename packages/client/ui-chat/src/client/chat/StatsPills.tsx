@@ -12,7 +12,7 @@ import type { InjectFace, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-u
 // Type-only: merges the sessionStats key into SessionProjectionMap for useProjection.
 import type {} from '@deepseek-ai/dsh-session-stats/client'
 // Type-only: merges the llmNetworkStats key into SessionProjectionMap for useProjection.
-import type {} from '@deepseek-ai/dsh-experimental-llm-network-stats/client'
+import type {} from '@deepseek-ai/dsh-llm-network-stats/client'
 import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
 import type { ChatViewSlotProps, PerformanceUsageInjected } from '../contract/slots.ts'
 import type { ChatSnapshot } from '../contract/snapshot.ts'

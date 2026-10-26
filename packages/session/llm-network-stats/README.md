@@ -3,7 +3,7 @@ description: "Per-request LLM transport figures for clients and maintainers comp
 kind: "package-reference"
 ---
 
-# @deepseek-ai/dsh-experimental-llm-network-stats
+# @deepseek-ai/dsh-llm-network-stats
 
 English | [中文](README.zh.md)
 
@@ -32,7 +32,7 @@ Mount the plugin beside the Session store, the projection registry, and an LLM a
 ```yaml
 - name: '@deepseek-ai/dsh-session'
 - name: '@deepseek-ai/dsh-session-projection'
-- name: '@deepseek-ai/dsh-experimental-llm-network-stats'
+- name: '@deepseek-ai/dsh-llm-network-stats'
 ```
 
 ### What the figures mean

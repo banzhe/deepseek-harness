@@ -12,12 +12,12 @@ import type { RequestTransportFacts } from '@deepseek-ai/dsh-llm-pi-ai'
 import { appendPluginRecord, pluginRecordOf, SessionId, SessionStore } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
-import * as LlmNetworkStats from '@deepseek-ai/dsh-experimental-llm-network-stats'
+import * as LlmNetworkStats from '@deepseek-ai/dsh-llm-network-stats'
 import {
   NETWORK_REQUEST_RECORD,
   networkStatsProjectionDefinition,
-} from '@deepseek-ai/dsh-experimental-llm-network-stats/src/projection.ts'
-import type { NetworkStatsProjection } from '@deepseek-ai/dsh-experimental-llm-network-stats/types'
+} from '@deepseek-ai/dsh-llm-network-stats/src/projection.ts'
+import type { NetworkStatsProjection } from '@deepseek-ai/dsh-llm-network-stats/types'
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface PluginRecordMap {

@@ -94,6 +94,12 @@
     - id: session-stats
       name: '@deepseek-ai/dsh-session-stats'
 
+    # Per-request transport figures for the same strip (the llmNetworkStats
+    # projection key): upload time, response-header wait, and request-body
+    # compression, recorded from the adapter's llm/transport event.
+    - id: llm-network-stats
+      name: '@deepseek-ai/dsh-llm-network-stats'
+
     # Whole-log turn outline for the chat turn rail (the turnOutline
     # projection key): every turn stays navigable before its events page in.
     - id: session-turn-outline

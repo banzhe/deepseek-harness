@@ -12,7 +12,7 @@
  * title — is a real request with a real upload, but folding it in would let one
  * compaction dominate the "last request" reading the figures exist to show.
  *
- * @module @deepseek-ai/dsh-experimental-llm-network-stats/projection
+ * @module @deepseek-ai/dsh-llm-network-stats/projection
  */
 
 import { z } from 'zod'
