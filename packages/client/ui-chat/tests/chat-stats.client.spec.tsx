@@ -562,7 +562,7 @@ describe('composer stats pills', () => {
     expect(dialog.textContent).toContain('Decode speed (TPS)20 tok/s')
   })
 
-  it('renders the transport rows with the last reading and the session average', () => {
+  it('renders the transport rows with the last reading, the session average, and the session total', () => {
     const { source } = makeSource({ nodes: [assistant(1, 1)] })
     const view = render(<StatsPills {...props(source, {
       tokenUsage: USAGE,
@@ -579,9 +579,9 @@ describe('composer stats pills', () => {
     })} />)
     fireEvent.click(view.getAllByRole('button')[0]!)
     const dialog = view.getByRole('dialog')
-    expect(dialog.textContent).toContain('Network upload timeLast 2s · Avg 1.5s')
-    expect(dialog.textContent).toContain('Server response timeLast 400ms · Avg 500ms')
-    expect(dialog.textContent).toContain('Request body compressionLast 5.9 KB→1.5 KB (25%) · Avg 25%')
+    expect(dialog.textContent).toContain('Network upload timeLast 2s · Avg 1.5s · Total 3s')
+    expect(dialog.textContent).toContain('Server response timeLast 400ms · Avg 500ms · Total 1s')
+    expect(dialog.textContent).toContain('Request body compressionLast 5.9 KB→1.5 KB (25%) · Avg 25% · Total 7.8 KB→2 KB')
     expect(dialog.textContent).toContain('the cost of uploading the conversation itself')
   })
 
@@ -623,7 +623,7 @@ describe('composer stats pills', () => {
     const pill = view.getAllByRole('button')[0]!
     expect(pill.textContent).toBe('1 turns 1 steps')
     fireEvent.click(pill)
-    expect(view.getByRole('dialog').textContent).toContain('Network upload timeLast 2s · Avg 2s')
+    expect(view.getByRole('dialog').textContent).toContain('Network upload timeLast 2s · Avg 2s · Total 2s')
   })
 
   it('leaves the dialog unchanged without the llmNetworkStats projection', () => {
