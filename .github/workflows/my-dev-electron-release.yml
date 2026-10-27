@@ -13,9 +13,9 @@ on:
         type: string
         required: false
       npm_targets:
-        description: 'Comma-separated npm single-executable targets; empty builds all five'
+        description: 'Comma-separated npm single-executable targets; empty builds all three'
         type: string
-        default: node24-linux-x64,node24-linux-arm64,node24-macos-arm64,node24-macos-x64,node24-win-x64
+        default: node24-linux-x64,node24-macos-arm64,node24-win-x64
         required: false
       npm_dist_tag:
         description: 'npm dist-tag for @banzhe/dsh-banzhe'
@@ -195,22 +195,18 @@ jobs:
           TARGETS: ${{ inputs.npm_targets }}
         run: |
           set -euo pipefail
-          targets="${TARGETS:-node24-linux-x64,node24-linux-arm64,node24-macos-arm64,node24-macos-x64,node24-win-x64}"
+          targets="${TARGETS:-node24-linux-x64,node24-macos-arm64,node24-win-x64}"
           matrix='[]'
           IFS=',' read -r -a list <<< "$targets"
           for raw in "${list[@]}"; do
             t="$(echo "$raw" | xargs)" # trim surrounding whitespace
             [ -z "$t" ] && continue
-            # Native-only: hosted arm64 Linux uses ubuntu-24.04-arm, while
-            # macos-latest is Apple Silicon; macos-15-intel is native x64.
             case "$t" in
-              node24-linux-x64)   runner=ubuntu-latest;    suffix=linux-x64 ;;
-              node24-linux-arm64) runner=ubuntu-24.04-arm; suffix=linux-arm64 ;;
-              node24-macos-arm64) runner=macos-latest;     suffix=darwin-arm64 ;;
-              node24-macos-x64)   runner=macos-15-intel;   suffix=darwin-x64 ;;
-              node24-win-x64)     runner=windows-2025;     suffix=win32-x64 ;;
+              node24-linux-x64)   runner=ubuntu-latest; suffix=linux-x64 ;;
+              node24-macos-arm64) runner=macos-latest;  suffix=darwin-arm64 ;;
+              node24-win-x64)     runner=windows-2025;  suffix=win32-x64 ;;
               *)
-                echo "::error::Unknown npm target '$t'. Supported: node24-linux-x64, node24-linux-arm64, node24-macos-arm64, node24-macos-x64, node24-win-x64."
+                echo "::error::Unknown npm target '$t'. Supported: node24-linux-x64, node24-macos-arm64, node24-win-x64."
                 exit 1
                 ;;
             esac
@@ -224,7 +220,7 @@ jobs:
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
           # Publishing needs every platform package; a partial dispatch still builds and
           # smokes what it selected but leaves the registry alone.
-          echo "complete=$([ "$(jq 'length' <<< "$matrix")" = '5' ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "complete=$([ "$(jq 'length' <<< "$matrix")" = '3' ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
   npm-exe:
     needs: npm-plan
