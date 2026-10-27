@@ -522,7 +522,9 @@ export async function packageTarget(
   }
   if (signPrimaryRuntime) await execute(['run', 'sign:primary-runtime'], electronBuilderEnv)
   await execute(['run', 'prepare:packages'], targetEnv)
-  await execute(['run', 'prepare:dsh', ...(signPrimaryRuntime ? ['--defer-runtime-smoke'] : [])], downloadEnv)
+  // Every run that continues past the prepare-only return below ends with the packaged smoke,
+  // which repeats these checks on the shipped artifact.
+  await execute(['run', 'prepare:dsh', ...(invocation.prepareOnly ? [] : ['--defer-runtime-smoke'])], downloadEnv)
   if (signPrimaryRuntime) await execute(['run', 'sign:primary-runtime', '--dsh'], electronBuilderEnv)
   if (invocation.prepareOnly) return
   const buildMacArtifact = (artifact: DesktopPrepackagedArtifact) => execute(

@@ -403,7 +403,7 @@ class SingleExeBuild {
       this.staging,
       '--sea',
       '--compress',
-      'Brotli',
+      'Zstd',
       '--targets',
       target.spec,
       '--output',
