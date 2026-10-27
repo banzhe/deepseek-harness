@@ -45,9 +45,7 @@ interface Target {
 
 const TARGETS: readonly Target[] = [
   { triple: 'node24-linux-x64', sourceSuffix: 'linux-x64', packageSuffix: 'linux-x64', os: 'linux', cpu: 'x64' },
-  { triple: 'node24-linux-arm64', sourceSuffix: 'linux-arm64', packageSuffix: 'linux-arm64', os: 'linux', cpu: 'arm64' },
   { triple: 'node24-macos-arm64', sourceSuffix: 'macos-arm64', packageSuffix: 'darwin-arm64', os: 'darwin', cpu: 'arm64' },
-  { triple: 'node24-macos-x64', sourceSuffix: 'macos-x64', packageSuffix: 'darwin-x64', os: 'darwin', cpu: 'x64' },
   { triple: 'node24-win-x64', sourceSuffix: 'win-x64', packageSuffix: 'win32-x64', os: 'win32', cpu: 'x64' },
 ]
 
@@ -232,7 +230,7 @@ function entryReadme(version: string): string {
     '',
     '## 已知限制',
     '',
-    '- 只有随包发布的平台可用（Linux x64/arm64、macOS arm64/x64、Windows x64）；其他平台启动会直接报错。',
+    '- 只有随包发布的平台可用（Linux x64、macOS arm64、Windows x64）；其他平台启动会直接报错。',
     '- Linux 需要 glibc 2.28 或更新；受限沙箱需要宿主安装 `bwrap`，否则受限模式按设计拒绝执行。',
     '- 安装或卸载插件（`dsh-banzhe plugin …`）需要宿主存在 `pnpm`。',
     '- Office 文档能力首次使用时按需下载独立的引擎目录。',
