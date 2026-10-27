@@ -24,6 +24,19 @@ on:
         required: false
   push:
     branches: [my_dev]
+    # A push that only touches documentation or agent material publishes no release. Markdown
+    # under packages/ and apps/ is named individually instead of by `**/*.md`, because skill
+    # Markdown ships inside the executable and a change to it belongs in a release.
+    paths-ignore:
+      - '.agents/**'
+      - 'docs/**'
+      - 'website/**'
+      - '*.md'
+      - '**/README.md'
+      - '**/README.zh.md'
+      - '**/AGENTS.md'
+      - '**/CLAUDE.md'
+      - '**/*.i18n.yaml'
 
 permissions:
   contents: write
@@ -55,6 +68,14 @@ jobs:
       - uses: actions/setup-node@v7.0.0
         with:
           node-version: '24'
+      # electron-builder downloads NSIS and its resources into the directory the packaging
+      # step points ELECTRON_BUILDER_CACHE at; a cold runner repeats that download every release.
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ${{ runner.temp }}/electron-builder-cache
+          key: electron-builder-${{ runner.os }}-${{ hashFiles('apps/desktop/package.json', 'pnpm-lock.yaml') }}
+          restore-keys: |
+            electron-builder-${{ runner.os }}-
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
       - name: Prepare unsigned Windows package settings
@@ -68,6 +89,7 @@ jobs:
           PACKAGE_VERSION: ${{ steps.settings.outputs.version }}
           DSH_DESKTOP_GITHUB_RELEASE_FEED: '1'
           DSH_DESKTOP_GITHUB_REPOSITORY: ${{ github.repository }}
+          ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
         run: pnpm run package:desktop:win:x64:unsigned --build-version "$env:PACKAGE_VERSION"
       - name: Point update metadata at GitHub Releases
         env:
@@ -291,9 +313,14 @@ jobs:
             exit 1
           }
       - name: Build the npm single-executable packages
+        # The aggregate test and script typechecks are the last gate of `pnpm run build`
+        # and add roughly two minutes after every artifact is ready. Only the linux-x64
+        # leg keeps them: it stays well inside the slowest leg's budget, so the release
+        # keeps one full check without paying for it on all five runners.
         run: >-
           pnpm exec tsx scripts/build-npm-exe.ts --targets=${{ matrix.target }}
           --version=${{ steps.version.outputs.version }}
+          ${{ matrix.target != 'node24-linux-x64' && '--build-artifacts' || '' }}
       - name: Smoke the packed executable (POSIX)
         if: runner.os != 'Windows'
         env:
