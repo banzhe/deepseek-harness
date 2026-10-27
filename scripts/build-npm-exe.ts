@@ -427,6 +427,8 @@ async function buildExecutables(cli: BuildCli): Promise<void> {
     `--targets=${(cli.targets ?? []).map(target => target.triple).join(',')}`,
     ...(cli.buildArtifacts ? ['--build-artifacts'] : []),
     ...(cli.skipBuild ? ['--skip-build'] : []),
+    // This personal release trades archive size for build time; pkg defaults to Brotli.
+    '--compress=Zstd',
   ])
   if (cli.dryRun) {
     console.log(`build-npm-exe: [dry-run] ${command} ${invocation.join(' ')}`)
