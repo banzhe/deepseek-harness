@@ -206,9 +206,9 @@ function reading(first: string, second: string | null): Pick<PillContent, 'label
   }
 }
 
-/** One metric's last-request and whole-session readings, in one row. */
-function lastAverage(last: string, average: string, t: Translate): string {
-  return t('stats.network.lastAverage', { last, average })
+/** One metric's last-request, whole-session average, and whole-session total readings, in one row. */
+function lastAverage(last: string, average: string, total: string, t: Translate): string {
+  return t('stats.network.lastAverage', { last, average, total })
 }
 
 // Every figure rides the durable sessionStats projection, so paging and
@@ -374,12 +374,14 @@ export const ActivityPill = memo(function ActivityPill({ useChat, useProjection,
             <dd>{lastAverage(
               formatLatency(lastRequest.uploadMs, t),
               formatLatency(network.uploadMs / network.requests, t),
+              formatLatency(network.uploadMs, t),
               t,
             )}</dd>
             <dt>{t('stats.dialog.networkResponse')}</dt>
             <dd>{lastAverage(
               formatLatency(lastRequest.responseMs, t),
               formatLatency(network.responseMs / network.requests, t),
+              formatLatency(network.responseMs, t),
               t,
             )}</dd>
             {/* Only a route that compressed something has sizes to compare. */}
@@ -391,6 +393,8 @@ export const ActivityPill = memo(function ActivityPill({ useChat, useProjection,
                   lastAfter: formatBytes(lastRequest.sentBytes, t),
                   lastPercent: compressionPercent(lastRequest.sentBytes, lastRequest.requestBytes),
                   averagePercent: compressionPercent(network.sentBytes, network.requestBytes),
+                  totalBefore: formatBytes(network.requestBytes, t),
+                  totalAfter: formatBytes(network.sentBytes, t),
                 })}</dd>
               </>
             )}
