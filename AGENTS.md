@@ -87,7 +87,7 @@ pnpm run test           # unit tests
 pnpm run test:coverage  # CI coverage gate: per-file 100% on packages/*/*/src
 pnpm run test:e2e       # real-API tests; self-skip without DEEPSEEK_API_KEY
 pnpm run test:expected  # owner-local process expectations
-pnpm run test:snapshot  # keyless recorded-session replay through shipped profiles; filter: -t <name>
+pnpm run test:snapshot  # keyless recorded-session replay through shipped profiles; filter: -t <name> (not run in this repository)
 pnpm run test:snapshot:record  # re-record expected outputs (needs key)
 pnpm run typecheck
 pnpm run lint
@@ -97,8 +97,8 @@ pnpm run build:artifacts # artifacts: tsc emits lib/types, tsdown bundles runtim
 pnpm run build:check    # typecheck aggregate tests/scripts against current build:artifacts output
 pnpm run hygiene        # publint + workspace/package/dependency checks + NodeNext consumer check
 pnpm run check:windows-wine  # ONLY when diagnosing a known Windows failure (needs wine); CI owns this signal
-pnpm run doc-sync       # documentation gates (scripts/run-gates.ts)
-pnpm run test:docs      # quick documentation checks (no build; doc-quick aggregate)
+pnpm run doc-sync       # documentation gates (scripts/run-gates.ts) (not run in this repository)
+pnpm run test:docs      # quick documentation checks (no build; doc-quick aggregate) (not run in this repository)
 pnpm run website:build  # VitePress build (doubles as dead-link check)
 pnpm dsh --profile headless "task"  # run one task from source (needs DEEPSEEK_API_KEY)
 pnpm run demo:ptc -- "task"  # headless PTC mode run (needs key)
@@ -119,6 +119,14 @@ Before pushing, follow [dsh-pre-push-checks](.agents/skills/dsh-pre-push-checks/
 - `test:coverage`, not `test`, is the CI coverage gate ([why](docs/testing.md)).
 - Develop with `build:artifacts`; before claiming completion, run `build:check` after the latest `build:artifacts`, or `build` ([layout](docs/development.md#typescript-project-layout)).
 - **Web browser automation and GIF recording:** launch with `pnpm dsh web --patch apps/web/tests/pin-browse-picker.overlay.yml` to use the [in-page directory picker](apps/web/tests/pin-browse-picker.overlay.yml); omit this override only when testing native picker behavior explicitly.
+
+### This repository does not run snapshots
+
+`pnpm run test:snapshot` and `pnpm run test:snapshot:record` are not run in this repository, not even for model- or product-user-visible changes. Local changes need no recorded-session snapshot, no `snapshots/` fixture, and no SDK expected-output update, so the snapshot obligations under [Conventions](#conventions) do not apply here. Run either command only when the user explicitly asks. Prove a local change with focused behavior tests, the affected typecheck or build, and `build:check`.
+
+### This repository does not run the documentation gates
+
+`pnpm run test:docs` and `pnpm run doc-sync` are not run in this repository, and a failing documentation gate does not block a local change; stale generated catalogs stay stale. Pull requests still meet them, because [ci.yml](.github/workflows/ci.yml) runs `check:ci:static`. Prove a local change with focused behavior tests, the affected typecheck or build, and `build:check`.
 
 ## Secrets / .env
 
