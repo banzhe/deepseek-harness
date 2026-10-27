@@ -5,10 +5,12 @@
 - Identifying paths:
   - .github/workflows/my-dev-electron-release.yml
   - scripts/build-exe-for-python-sdk.ts
+  - scripts/build-exe-for-python-sdk.spec.ts
 - Unique strings or tests:
   - `--build-artifacts` in the `npm-exe` build step
   - `matrix.target != 'node24-linux-x64'`
   - `'Zstd'` in the `pkg --sea` invocation
+  - `--sea --compress Zstd --targets node24-macos-x64`
 
 ## Intent
 

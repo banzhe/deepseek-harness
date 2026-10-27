@@ -17,7 +17,7 @@ import { parseArgs } from 'node:util'
 const root = resolve(import.meta.dirname, '..')
 const DEFAULT_DIR = join(root, 'dist-exe', 'npm')
 const DEFAULT_REGISTRY = 'https://registry.npmjs.org'
-const PLATFORM_SUFFIXES = ['linux-x64', 'linux-arm64', 'darwin-arm64', 'darwin-x64', 'win32-x64'] as const
+const PLATFORM_SUFFIXES = ['linux-x64', 'darwin-arm64', 'win32-x64'] as const
 
 /** One artifact recorded by the build script beside its tarball. */
 interface Artifact {
