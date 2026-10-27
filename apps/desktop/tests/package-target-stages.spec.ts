@@ -205,6 +205,8 @@ it.each(['--unsigned', '--prepare-only'])('keeps %s hardware-free and creates no
   for (const call of run.run.mock.calls) expect(call[3].env).not.toHaveProperty('DSH_DESKTOP_WINDOWS_TOKEN_PIN')
   expect(writeFileSync).not.toHaveBeenCalled()
   expect(stages.includes('exec tsx scripts/smoke-packaged-runtime.ts --unsigned')).toBe(mode === '--unsigned')
+  // The packaged smoke repeats the runtime checks, so only a run that reaches it may defer them.
+  expect(stages.includes('run prepare:dsh --defer-runtime-smoke')).toBe(mode === '--unsigned')
 })
 
 it.each(['mac-arm64', 'mac-x64', 'win-x64'] as const)('selects branding from the signing mode for %s', async (target) => {
