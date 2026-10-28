@@ -9,6 +9,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import z from '@deepseek-ai/schemastery'
+import { normalizeQuestions, QUESTION_ITEM } from './questions.ts'
 import { registerTimedAskUser } from './timed.ts'
 import '@deepseek-ai/dsh-user-questions'
 
@@ -43,34 +44,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         type: 'array',
         required: true,
         description: 'Questions to ask the user before continuing.',
-        items: {
-          type: 'object',
-          additionalProperties: true,
-          properties: {
-            id: { type: 'string', required: true, description: 'Stable id for this question; echoed in the answer.' },
-            question: { type: 'string', required: true, description: 'The specific question to ask the user.' },
-            header: {
-              type: 'string',
-              description: 'Optional short heading for the question, such as "Confirm" or "Choose Mode".',
-            },
-            options: {
-              type: 'array',
-              description: 'Optional choices to show the user. If you recommend one, put it first and append "(Recommended)" to that label.',
-              items: {
-                type: 'object',
-                additionalProperties: true,
-                properties: {
-                  label: { type: 'string', required: true, description: 'Short user-facing option label.' },
-                  description: { type: 'string', description: 'One sentence explaining the tradeoff or impact.' },
-                },
-              },
-            },
-            multi_select: {
-              type: 'boolean',
-              description: 'Whether the user may select more than one option. Defaults to false.',
-            },
-          },
-        },
+        items: QUESTION_ITEM,
       },
     },
     output: {
@@ -97,7 +71,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     },
     async execute(args, exec) {
       const result = await ctx.userQuestions.ask({
-        questions: args.questions.map(question => ({
+        questions: normalizeQuestions(args.questions).map(question => ({
           id: question.id,
           question: question.question,
           ...question.header !== undefined ? { header: question.header } : {},

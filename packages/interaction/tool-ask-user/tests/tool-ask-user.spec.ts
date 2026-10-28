@@ -355,6 +355,58 @@ describe('ask_user_question tool', () => {
     ])
   })
 
+  it('recovers question fields whose keys carry surrounding whitespace', async () => {
+    const ctx = await setup({ mode: 'legacy' })
+    const seen: AskUserQuestionRequest[] = []
+    registerQuestionAnswerer(ctx, {
+      async ask(request) {
+        seen.push(request)
+        return { answers: [{ id: 'scope', selected: ['Tool only'] }] }
+      },
+    })
+
+    await executeToolFixture(ctx, {
+      signal: testToolSignal,
+      callId: ToolCallId('ask-padded-keys'),
+      name: 'ask_user_question',
+      arguments: {
+        questions: [{
+          id: 'scope',
+          question: 'Which scope?',
+          'header ': 'Scope',
+          'multi_select ': true,
+          'options ': [{ 'label ': 'Tool only', 'description ': 'One tool.' }, { label: 'Everything' }],
+        }],
+      },
+    })
+
+    // A key the model padded with spaces names a field the user never saw: the
+    // recovered choices reach the card, and no stray key crosses the seam.
+    expect(seen[0]?.questions).toEqual([{
+      id: 'scope', question: 'Which scope?', header: 'Scope', multiSelect: true,
+      options: [{ label: 'Tool only', description: 'One tool.' }, { label: 'Everything' }],
+    }])
+  })
+
+  it('rejects a recovered question field that does not match the question schema', async () => {
+    const ctx = await setup()
+    const answerer = vi.fn(async (): Promise<AskUserQuestionAnswer> => ({ answers: [] }))
+    registerQuestionAnswerer(ctx, { ask: answerer })
+
+    const result = await executeToolFixture(ctx, {
+      signal: testToolSignal,
+      callId: ToolCallId('ask-bad-recovered-option'),
+      name: 'ask_user_question',
+      arguments: { questions: [{ id: 'scope', question: 'Which scope?', 'options ': [{ label: 7 }] }] },
+    })
+
+    expect(result.isError).toBe(true)
+    const text = result.content[0]?.type === 'text' ? result.content[0].text : ''
+    expect(text).toContain('invalid arguments')
+    expect(text).toContain('must be a string')
+    expect(answerer).not.toHaveBeenCalled()
+  })
+
   it('projects custom answers and multi-select choices', async () => {
     const ctx = await setup()
     registerQuestionAnswerer(ctx, {

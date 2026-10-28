@@ -8,6 +8,7 @@ import { TIMED_WAIT_PARAMETER } from '@deepseek-ai/dsh-user-questions'
 import type {
   AskUserQuestionAnswer, AskUserQuestionRequestEvent,
 } from '@deepseek-ai/dsh-user-questions/types'
+import { normalizeQuestions, QUESTION_ITEM, type ToolQuestion } from './questions.ts'
 
 function validateTimeout(timeout: number): number {
   if (timeout !== -1 && (!Number.isInteger(timeout) || timeout < 1 || timeout > 2_147_483)) {
@@ -40,14 +41,6 @@ const pendingNotice = 'No answer batch arrived before the timeout. This is pendi
   + 'Continue useful independent work. The user can still answer; their reply will be a user message '
   + 'identified as answer_to_pending_question with this callId and the original questions. '
   + 'Do not treat this as permission.'
-
-interface ToolQuestion {
-  readonly id: string
-  readonly question: string
-  readonly header?: string
-  readonly options?: { readonly label: string; readonly description?: string }[]
-  readonly multi_select?: boolean
-}
 
 interface ToolAnswerResult {
   readonly answers: {
@@ -111,34 +104,7 @@ export function registerTimedAskUser(ctx: Context, timeout = 120): void {
         type: 'array',
         required: true,
         description: 'Questions to ask the user.',
-        items: {
-          type: 'object',
-          additionalProperties: true,
-          properties: {
-            id: { type: 'string', required: true, description: 'Stable id for this question; echoed in the answer.' },
-            question: { type: 'string', required: true, description: 'The specific question to ask the user.' },
-            header: {
-              type: 'string',
-              description: 'Optional short heading for the question, such as "Confirm" or "Choose Mode".',
-            },
-            options: {
-              type: 'array',
-              description: 'Optional choices to show the user. If you recommend one, put it first and append "(Recommended)" to that label.',
-              items: {
-                type: 'object',
-                additionalProperties: true,
-                properties: {
-                  label: { type: 'string', required: true, description: 'Short user-facing option label.' },
-                  description: { type: 'string', description: 'One sentence explaining the tradeoff or impact.' },
-                },
-              },
-            },
-            multi_select: {
-              type: 'boolean',
-              description: 'Whether the user may select more than one option. Defaults to false.',
-            },
-          },
-        },
+        items: QUESTION_ITEM,
       },
       // The `userQuestions` projection reads this parameter's presence out of
       // the logged request header to tell a timed call from a legacy one.
@@ -190,8 +156,9 @@ export function registerTimedAskUser(ctx: Context, timeout = 120): void {
     },
     async execute(args, exec) {
       const timeout = validateTimeout(args.timeout ?? defaultTimeout)
-      validateQuestionIds(args.questions)
-      const request = questionRequest(args.questions, exec)
+      const questions = normalizeQuestions(args.questions)
+      validateQuestionIds(questions)
+      const request = questionRequest(questions, exec)
       if (timeout !== -1) {
         if (exec.agent === undefined) throw new Error('timed questions require a live agent')
         const result = await ctx.userQuestions.askTimed({ ...request, agent: exec.agent }, exec.callId, timeout * 1000)
