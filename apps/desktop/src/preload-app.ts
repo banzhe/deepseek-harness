@@ -75,6 +75,7 @@ function createProductApi(): DshDesktopProductApi {
     },
     window: {
       reveal: () => ipcRenderer.invoke(DESKTOP_IPC.windowReveal) as Promise<void>,
+      setProgressBar: progress => ipcRenderer.invoke(DESKTOP_IPC.windowProgress, progress) as Promise<void>,
     },
     notifications: {
       show: request => ipcRenderer.invoke(DESKTOP_IPC.notificationsShow, request) as Promise<boolean>,
