@@ -43,6 +43,7 @@ export const DESKTOP_IPC = {
   nativeThemeSet: 'dsh-desktop:native-theme-set',
   windowFullscreen: 'dsh-desktop:window-fullscreen',
   windowReveal: 'dsh-desktop:window-reveal',
+  windowProgress: 'dsh-desktop:window-progress',
   notificationsShow: 'dsh-desktop:notifications-show',
   notificationsClose: 'dsh-desktop:notifications-close',
   notificationsActivate: 'dsh-desktop:notifications-activate',
@@ -105,6 +106,14 @@ export interface DshDesktopProductApi {
   }
   readonly window: {
     reveal(): Promise<void>
+    /**
+     * Drive the Windows taskbar progress indicator on this window.
+     * @param progress - Below `0` clears the indicator. Values in `[0, 1]` are
+     *   determinate. Above `1` is the indeterminate pulse. Non-Windows shells
+     *   resolve without changing the window.
+     * @returns a void promise; a refused IPC rejects.
+     */
+    setProgressBar(progress: number): Promise<void>
   }
   readonly notifications: {
     /**

@@ -862,6 +862,21 @@ async function main(): Promise<void> {
     assertProductSender(event)
     focusPrimaryWindow()
   })
+  // A renderer cannot reach the taskbar. The Windows pulse is the native
+  // indeterminate progress on the button; other platforms have no equivalent
+  // that would not clamp to a full bar, so they resolve without a write.
+  ipcMain.handle(DESKTOP_IPC.windowProgress, (event, progress: unknown) => {
+    const window = assertProductSender(event)
+    if (typeof progress !== 'number' || !Number.isFinite(progress)) {
+      throw new Error('desktop window: invalid progress')
+    }
+    if (process.platform !== 'win32') return
+    try {
+      window.setProgressBar(progress)
+    } catch (error) {
+      console.warn('desktop window: progress bar unavailable', error)
+    }
+  })
   // Renderer notifications ride the shell so their activation survives the
   // Windows notification center, where the renderer surface's clicks do not.
   // Every activation refocuses before the renderer routes its id: a click that

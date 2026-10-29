@@ -45,8 +45,10 @@ it('limits product documents to update status, a native confirmation action, and
   await api.updates.status()
   await api.updates.open()
   await api.window.reveal()
+  await api.window.setProgressBar(0.5)
   expect(electron.ipcRenderer.invoke.mock.calls).toEqual([
     [DESKTOP_IPC.updatesStatus], [DESKTOP_IPC.updatesOpen], [DESKTOP_IPC.windowReveal],
+    [DESKTOP_IPC.windowProgress, 0.5],
   ])
   expect(api).not.toHaveProperty('plugins')
   expect(api).not.toHaveProperty('backend')

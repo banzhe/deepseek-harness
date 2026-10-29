@@ -98,6 +98,7 @@ const harness = await vi.hoisted(async () => {
     readonly moveTop = vi.fn()
     readonly setAlwaysOnTop = vi.fn()
     readonly restore = vi.fn()
+    readonly setProgressBar = vi.fn()
     readonly setSize = vi.fn()
     readonly getBounds = vi.fn(() => ({ x: 0, y: 0, width: 800, height: 700 }))
     readonly setMinimumSize = vi.fn()
@@ -1412,6 +1413,40 @@ describe('desktop main startup', () => {
     expect(() => invoke(DESKTOP_IPC.windowReveal, 'app')).toThrow('dsh desktop: rejected IPC from an unowned renderer')
     expect(() => invoke(DESKTOP_IPC.windowReveal, 'shell')).toThrow('dsh desktop: rejected IPC from an unowned renderer')
     expect(harness.windows).toHaveLength(1)
+  })
+
+  it('forwards finite window progress to the primary window on Windows', async () => {
+    await readyWorkspace()
+    const window = harness.windows[0]!
+    for (const progress of [-1, 0.5, 2]) {
+      expect(await invoke(DESKTOP_IPC.windowProgress, 'app', progress)).toBeUndefined()
+      expect(window.setProgressBar).toHaveBeenLastCalledWith(progress)
+    }
+    expect(window.setProgressBar).toHaveBeenCalledTimes(3)
+  })
+
+  it('refuses window progress from an unowned renderer', async () => {
+    await readyWorkspace()
+    const window = harness.windows[0]!
+    expect(() => invoke(DESKTOP_IPC.windowProgress, 'shell', 0.5)).toThrow('dsh desktop: rejected IPC from an unowned renderer')
+    expect(window.setProgressBar).not.toHaveBeenCalled()
+  })
+
+  it('rejects non-finite window progress', async () => {
+    await readyWorkspace()
+    const window = harness.windows[0]!
+    for (const progress of ['1', NaN, Infinity, undefined, null, {}]) {
+      expect(() => invoke(DESKTOP_IPC.windowProgress, 'app', progress)).toThrow('desktop window: invalid progress')
+    }
+    expect(window.setProgressBar).not.toHaveBeenCalled()
+  })
+
+  it('accepts window progress on macOS without applying it', async () => {
+    vi.stubGlobal('process', { ...process, platform: 'darwin', arch: 'arm64', resourcesPath: 'desktop-test-resources' })
+    await readyWorkspace()
+    const window = harness.windows[0]!
+    expect(await invoke(DESKTOP_IPC.windowProgress, 'app', 0.5)).toBeUndefined()
+    expect(window.setProgressBar).not.toHaveBeenCalled()
   })
 
   it('sets the packaged AppUserModelID at startup on Windows and macOS', async () => {
