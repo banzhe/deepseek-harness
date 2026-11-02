@@ -188,7 +188,7 @@ git rebase --empty=drop --onto "$base" "$fork"
 
 - 同一文件两侧改动落在不同行域。
 - 二进制资源（`*.png`、`*.ico`、`*.woff*`）两侧都新增：保留本地一份，并在 PR 描述记录「上游另有同名资源，已保留本地版本」。
-- `package.json` 只差版本号或依赖条目：逐条合并，本地版本优先用于本地依赖。
+- `package.json` 只差版本号或依赖条目：逐条合并，本地版本优先用于本地依赖。基线升版本时，本地独有的包要把 `version` 改成基线的根版本（见 [references/rebase-notes.md](references/rebase-notes.md)）。
 - lockfile：不要手改，冲突后对受影响目录重跑 `pnpm install`。
 
 **必须停机**（不自动解决，保持变基进行中并报告）：
@@ -271,6 +271,16 @@ NODE_OPTIONS=--max-old-space-size=8192 pnpm run doc-sync
 
 `verify-doc-graphs`（即 `tsx scripts/gen-doc-graphs.ts --check`）在默认堆下会 OOM 并表现为门禁失败；给到 8 GB 后约 76 秒通过。OOM 不是代码问题，不得据此修改源码或门禁。
 
+### 9.1 家族版本与锁文件
+
+每次变基后、提交前必须运行：
+
+```sh
+pnpm exec tsx scripts/release/verify.ts --family dsh --skip-tag-check
+```
+
+非 0 即停止，不要提交或推送。上游发布提交换掉根版本之后，本地独有的 `packages/*/*` 与 `apps/*` 清单不会跟着变；`pnpm-lock.yaml` 与实际部署闭包也可能脱节。两者都只在桌面打包与单文件 exe 阶段失败，平时的构建与测试不会报，规则与失败指纹见 [references/rebase-notes.md](references/rebase-notes.md)。
+
 ## 10. 已知上游既有失败
 
 有些门禁在任何基线上都失败，与本分支无关。命中这些指纹时不阻塞，但必须在报告中列出：
@@ -303,6 +313,7 @@ git worktree remove --force /tmp/wt-base
 - 自动解决的冲突清单（文件、块数、解决方式），以及停机未解决的冲突（若有）。
 - 交付分支名、PR 链接，以及 PR 描述包含的四节。
 - 构建结果与所运行的命令，以及命中的既有上游失败。
+- 家族版本与锁文件验证的结果（第 9.1 节命令的退出码与成员数）。
 - 说明：变基到某个版本后，`"$base..origin/master"` 的 commit 暂不在分支上，要到下一次变基到 `master` 或更新版本时才会回归。
 - 说明：`my_dev` 在 PR 合并前保持未推送状态，本地与 `origin/my_dev` 分叉属正常。
 - 剩余的本地 note。

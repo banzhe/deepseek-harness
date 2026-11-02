@@ -16,6 +16,10 @@ packages:
 
 overrides:
   'extract-zip>yauzl': '3.4.0'
+  # The single-executable build deploys its runtime closure with the hoisted
+  # linker, which resolves dependencies without the workspace lockfile; pinning
+  # here keeps that closure and pnpm-lock.yaml on the version the build verifies.
+  tslib: '2.9.1'
   '@deepseek-ai/cosmokit': 'link:vendor/cosmokit'
   '@deepseek-ai/schemastery': 'link:vendor/schemastery'
 
