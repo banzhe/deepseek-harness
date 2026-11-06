@@ -9,13 +9,11 @@
 - Unique strings or tests:
   - `--build-artifacts` in the `npm-exe` build step
   - `matrix.target != 'node24-linux-x64'`
-  - `'Zstd'` in the `pkg --sea` invocation
-  - `--sea --compress Zstd --targets node24-macos-x64`
 
 ## Intent
 
-Cut the two steps that dominate the my_dev release run. Every `npm-exe` leg now passes `--build-artifacts` to `scripts/build-npm-exe.ts` so the aggregate test and script typechecks stop trailing every artifact, except the linux-x64 leg, which keeps the full `pnpm run build` as the release's one complete check. `scripts/build-exe-for-python-sdk.ts` compresses the SEA archive with `Zstd` instead of `Brotli`, which is an order of magnitude faster at a slightly larger archive.
+Cut the aggregate test and script typechecks that trail every artifact. Every `npm-exe` leg now passes `--build-artifacts` to `scripts/build-npm-exe.ts`, except the linux-x64 leg, which keeps the full `pnpm run build` as the release's one complete check. The archive compression that once accompanied this change is owned by [the Brotli quality note](2026-11-07-brotli-quality-11-release.md).
 
 ## Already-on-master test
 
-Search the base for `--build-artifacts` in `.github/workflows/my-dev-electron-release.yml` (upstream `build-exe-for-python-sdk.yml` passes no build-scope flag, so its `pnpm run build` is not this fix) and for `'Zstd'` in `scripts/build-exe-for-python-sdk.ts`, whose base value is `'Brotli'`.
+Search the base for `--build-artifacts` in `.github/workflows/my-dev-electron-release.yml` (upstream `build-exe-for-python-sdk.yml` passes no build-scope flag, so its `pnpm run build` is not this fix).

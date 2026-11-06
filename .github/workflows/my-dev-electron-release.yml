@@ -313,9 +313,13 @@ jobs:
         # and add roughly two minutes after every artifact is ready. Only the linux-x64
         # leg keeps them: it stays well inside the slowest leg's budget, so the release
         # keeps one full check without paying for it on all five runners.
+        # Published tarballs get the smallest archive this pipeline can produce: Brotli
+        # at its maximum quality 11 costs minutes per target instead of the seconds that
+        # the build-time default of 6 needs, and both fit the job budget.
         run: >-
           pnpm exec tsx scripts/build-npm-exe.ts --targets=${{ matrix.target }}
           --version=${{ steps.version.outputs.version }}
+          --compress=Brotli --compress-quality=11
           ${{ matrix.target != 'node24-linux-x64' && '--build-artifacts' || '' }}
       - name: Smoke the packed executable (POSIX)
         if: runner.os != 'Windows'
