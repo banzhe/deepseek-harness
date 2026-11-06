@@ -31,4 +31,4 @@ git grep -n -F -- '无人值守的冲突闸门' <base> -- .agents/skills/dsh-reb
 git grep -n -F -- '合并后校验' <base> -- .agents/skills/dsh-compatibility-check/SKILL.md
 ```
 
-Landed only when all three exist on the base. Current result: both skill files are absent from the `0.2.1-rc.3` base, so the work is not-landed. Upstream's `AGENTS.md` also has no rule admitting these skills, so the same conclusion holds for `origin/master`.
+Landed only when all three exist on the base. Current result: both skill files are absent from the `0.2.2-rc.1` base, so the work is not-landed. Upstream's `AGENTS.md` also has no rule admitting these skills, so the same conclusion holds for `origin/master`.

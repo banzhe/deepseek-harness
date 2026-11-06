@@ -15,4 +15,4 @@ Corrects the `dsh-compatibility-check` skill: drops the `--profile` argument bec
 
 ## Already-on-master test
 
-Search the named base for the corrected startup line: `git grep -n -F -- 'pnpm dsh web --port 23008 --no-open' <base> -- .agents/skills/dsh-compatibility-check/SKILL.md`. Landed only when the corrected text exists. Current result: `.agents/skills/dsh-compatibility-check/SKILL.md` is absent from the 0.2.1-rc.3 base, so the correction is not-landed.
+Search the named base for the corrected startup line: `git grep -n -F -- 'pnpm dsh web --port 23008 --no-open' <base> -- .agents/skills/dsh-compatibility-check/SKILL.md`. Landed only when the corrected text exists. Current result: `.agents/skills/dsh-compatibility-check/SKILL.md` is absent from the 0.2.2-rc.1 base, so the correction is not-landed.
