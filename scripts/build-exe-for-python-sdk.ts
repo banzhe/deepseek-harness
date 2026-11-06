@@ -9,7 +9,7 @@
 import { createHash } from 'node:crypto'
 import { build as bundle } from 'tsdown'
 import { spawn } from 'node:child_process'
-import { pnpmInvocation, verifyStagedDependencies } from './executable-packaging.ts'
+import { pnpmInvocation, RUNTIME_DEV_ASSET_IGNORES, verifyStagedDependencies } from './executable-packaging.ts'
 import { existsSync, statSync } from 'node:fs'
 import { chmod, copyFile, cp, glob, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, resolve, sep } from 'node:path'
@@ -349,6 +349,7 @@ class SingleExeBuild {
       ...['packages', 'apps', 'vendor', 'native', 'scripts'].map(directory => `${join(root, directory).replaceAll('\\', '/')}/**`),
       `${root.replaceAll('\\', '/')}/tsconfig*.json`,
       '**/*.map', '**/*.d.ts', '**/*.d.mts', '**/*.d.cts',
+      ...RUNTIME_DEV_ASSET_IGNORES,
     ] } }
     const manifestPath = join(this.staging, 'package.json')
     if (this.cli.dryRun) {
