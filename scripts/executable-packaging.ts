@@ -4,6 +4,25 @@ import { cp, mkdir, readFile } from 'node:fs/promises'
 import { dirname, extname, join, resolve, sep } from 'node:path'
 
 /**
+ * Development and test payloads excluded from both executable carriers. pkg matches `ignore` against
+ * absolute slash-separated paths, so every pattern starts with a `**` glob segment. Runtime `.js`,
+ * `.cjs`, `.mjs`, `.json`, `.node`, `.yaml`, and package-owned `SKILL.md` stay in the archive because
+ * the asset globs keep them; these patterns drop only files that no runtime import reaches.
+ */
+export const RUNTIME_DEV_ASSET_IGNORES = [
+  // Test suites, fixtures, examples, benchmarks, and coverage output at any depth.
+  '**/node_modules/**/{test,tests,__tests__,__mocks__,fixtures,examples,bench,benchmarks,coverage}/**',
+  '**/node_modules/**/*.{test,spec}.{js,cjs,mjs}',
+  // Package prose other than runtime skill instructions.
+  '**/node_modules/**/{docs,doc}/**/*.md',
+  '**/node_modules/**/{README,CHANGELOG,HISTORY,CONTRIBUTING,CODE_OF_CONDUCT,SECURITY}*.md',
+  // Development CI, editor, linter, and lock files.
+  '**/node_modules/**/{package-lock.json,npm-shrinkwrap.json,yarn.lock,pnpm-lock.yaml}',
+  '**/node_modules/**/{.github,.circleci,.devcontainer,.yarn,.vscode,.husky,.history,.idea}/**',
+  '**/node_modules/**/{.npmignore,.editorconfig,.eslintrc*,.prettierrc*,.babelrc*,.eslintignore,.prettierignore,.travis.yml,.gitlab-ci.yml,appveyor.yml,.nycrc*}',
+]
+
+/**
  * Resolve pnpm without invoking a command shell, including Windows shims.
  * @param args - pnpm arguments.
  * @returns the executable and its argument vector.

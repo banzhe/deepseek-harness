@@ -7,7 +7,7 @@ import { parseArgs } from 'node:util'
 import { build } from 'tsdown'
 import { create as createTar } from 'tar'
 import { verifyRuntimeClosure } from './verify-runtime-closure.ts'
-import { pnpmInvocation, restoreLegacyHoists } from './executable-packaging.ts'
+import { pnpmInvocation, restoreLegacyHoists, RUNTIME_DEV_ASSET_IGNORES } from './executable-packaging.ts'
 import { materializeStagedLinks, deduplicateStagedWorkspacePackages } from './build-exe-for-python-sdk-staging.ts'
 import { resolveLinuxNodePtyAddon } from './executable-native-pty.ts'
 import { artifactManifestSchema, fileDigest, payloadFiles, SSH_HELPER_TARGETS, verifyPayload, type SshHelperTarget } from './ssh-helper/artifact.ts'
@@ -143,7 +143,7 @@ export async function buildSshHelper(argv: string[]): Promise<void> {
     const stagedManifest = await manifest(join(staging, 'package.json'))
     await writeFile(join(staging, 'runtime-bootstrap.mjs'), 'import { runSshHelperRuntime } from "./lib/index.js";\nawait runSshHelperRuntime();\n')
     await writeFile(join(staging, 'package.json'), `${JSON.stringify({ ...stagedManifest,
-      bin: 'runtime-bootstrap.mjs', pkg: { assets, ignore: ['node_modules/@deepseek-ai/node-addon-system-*/**/*'] },
+      bin: 'runtime-bootstrap.mjs', pkg: { assets, ignore: [...RUNTIME_DEV_ASSET_IGNORES, 'node_modules/@deepseek-ai/node-addon-system-*/**/*'] },
     }, null, 2)}\n`)
     const executable = join(product, 'dsh-ssh-helper')
     await pnpm('exec', 'pkg', staging, '--sea', '--targets', target, '--output', executable)
