@@ -16,7 +16,7 @@
 
 Two inputs of the `my_dev release` workflow now agree with what the release build consumes.
 
-`@deepseek-ai/dsh-llm-network-stats` carries the family version `0.2.2-alpha.2`, so all 374 `packages/*/*` and `apps/*` members share one version and `DshFamily.verifyVersions` passes for desktop packaging and `scripts/prepare-runtime.ts`. The package exists only on this branch, so a base bump of the root version has to be carried into it by hand.
+`@deepseek-ai/dsh-llm-network-stats` carries the family version `0.2.2-rc.1`, so all 374 `packages/*/*` and `apps/*` members share one version and `DshFamily.verifyVersions` passes for desktop packaging and `scripts/prepare-runtime.ts`. The package exists only on this branch, so a base bump of the root version has to be carried into it by hand.
 
 `pnpm-workspace.yaml` pins `tslib` to `2.9.1` and `pnpm-lock.yaml` records `tslib@2.9.1` with its SHA-512 integrity. The pin also governs the runtime closure of the single-executable build, which `scripts/build-exe-for-python-sdk.ts` deploys with `--config.node-linker=hoisted`: that legacy deploy resolves without the workspace lockfile, so an unpinned transitive dependency can reach a version the lock does not record, and `runtimeNpmArchive` then rejects it as `runtime npm lock: missing SHA-512 integrity`.
 

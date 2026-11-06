@@ -29,4 +29,4 @@ git grep -n -F -- 'gh pr create --base my_dev' <base> -- .agents/skills/dsh-reba
 git ls-tree -r --name-only <base> -- .agents/skills/dsh-rebase-onto-master/rebase/
 ```
 
-Landed when the first command matches and the second prints nothing. Current result: the `0.2.1-rc.3` base has no `dsh-rebase-onto-master` skill at all, so the work is not-landed.
+Landed when the first command matches and the second prints nothing. Current result: the `0.2.2-rc.1` base has no `dsh-rebase-onto-master` skill at all, so the work is not-landed.

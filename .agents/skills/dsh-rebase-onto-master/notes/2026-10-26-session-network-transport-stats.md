@@ -77,4 +77,4 @@ git grep -n -F -- 'llmNetworkStats' <base>
 git grep -n -F -- 'dsh-llm-network-stats' <base> -- packages/bundle
 ```
 
-Current result: all four are empty on `release(dsh): 0.2.1-rc.2` (the newest release commit, and the only commit with that subject) and on the `origin/master` tip, so the work is not-landed.
+Current result: all four are empty on `release(dsh): 0.2.2-rc.1` (the newest release commit, and the only commit with that subject) and on the `origin/master` tip, so the work is not-landed.
