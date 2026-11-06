@@ -79,6 +79,10 @@ interface BuildCli {
   readonly buildArtifacts: boolean
   /** Forward `--skip-build` to the upstream build, reusing the current `lib/` artifacts. */
   readonly skipBuild: boolean
+  /** pkg archive compression forwarded to the upstream build. */
+  readonly compress: string
+  /** Brotli quality forwarded to the upstream build; `undefined` keeps the fast default. */
+  readonly compressQuality: string | undefined
   /** Print commands and intended writes without performing them. */
   readonly dryRun: boolean
   /** Reject a tarball above this size. */
@@ -96,6 +100,8 @@ function usage(): string {
     '  --assemble-only        Skip the upstream executable build and use existing dist-exe/ products.',
     '  --build-artifacts      Forward `--build-artifacts` to the upstream build.',
     '  --skip-build           Forward `--skip-build` to the upstream build (existing lib/ artifacts).',
+    '  --compress=<type>      Forward the pkg archive compression: None | GZip | Brotli | Zstd (default: Brotli).',
+    '  --compress-quality=<n> Forward the Brotli quality 0-11; the default of 6 keeps a local build fast.',
     '  --out=<dir>            Output directory (default: dist-exe/npm).',
     '  --max-mb=<n>           Reject a tarball above this size (default: 100).',
     '  --dry-run              Print commands and intended writes without performing them.',
@@ -387,6 +393,8 @@ function parseCli(argv: string[]): BuildCli {
       'assemble-only': { type: 'boolean', default: false },
       'build-artifacts': { type: 'boolean', default: false },
       'skip-build': { type: 'boolean', default: false },
+      compress: { type: 'string', default: 'Brotli' },
+      'compress-quality': { type: 'string' },
       out: { type: 'string' },
       'max-mb': { type: 'string' },
       'dry-run': { type: 'boolean', default: false },
@@ -412,6 +420,8 @@ function parseCli(argv: string[]): BuildCli {
     build: !values['assemble-only'],
     buildArtifacts: values['build-artifacts'],
     skipBuild: values['skip-build'],
+    compress: values.compress,
+    compressQuality: values['compress-quality'],
     dryRun: values['dry-run'],
     maxMb,
   }
@@ -425,8 +435,10 @@ async function buildExecutables(cli: BuildCli): Promise<void> {
     `--targets=${(cli.targets ?? []).map(target => target.triple).join(',')}`,
     ...(cli.buildArtifacts ? ['--build-artifacts'] : []),
     ...(cli.skipBuild ? ['--skip-build'] : []),
-    // This personal release trades archive size for build time; pkg defaults to Brotli.
-    '--compress=Zstd',
+    // The compression quality stays the release workflow's choice: the upstream default keeps
+    // local runs fast, and the release lanes opt into a smaller archive explicitly.
+    `--compress=${cli.compress}`,
+    ...(cli.compressQuality === undefined ? [] : [`--compress-quality=${cli.compressQuality}`]),
   ])
   if (cli.dryRun) {
     console.log(`build-npm-exe: [dry-run] ${command} ${invocation.join(' ')}`)

@@ -165,12 +165,39 @@ const COMPRESS_TYPES = ['None', 'GZip', 'Brotli', 'Zstd'] as const
 type CompressType = typeof COMPRESS_TYPES[number]
 
 /**
+ * Environment variable the vendored pkg patch reads for its Brotli quality. pkg's own
+ * `--compress` carries no quality, so the patch owns both the fast default and this knob.
+ */
+const BROTLI_QUALITY_ENV = 'DSH_PKG_BROTLI_QUALITY'
+/** Brotli's quality range, where 11 is the smallest archive and the slowest build. */
+const BROTLI_QUALITY_LIMITS = { min: 0, max: 11 } as const
+
+/**
  * Narrow a raw `--compress` value to a supported pkg compressor.
  * @param value - the command-line value.
  * @returns whether pkg accepts the value.
  */
 function isCompressType(value: string): value is CompressType {
   return (COMPRESS_TYPES as readonly string[]).includes(value)
+}
+
+/**
+ * Validate `--compress-quality`, rejecting a value no Brotli archive would consume.
+ * @param raw - the command-line value; absent when the flag was not passed.
+ * @param compress - the selected pkg compressor.
+ * @returns the Brotli quality, or `undefined` when pkg keeps the patch's fast default.
+ */
+function parseCompressQuality(raw: string | undefined, compress: CompressType): number | undefined {
+  if (raw === undefined) return undefined
+  if (compress !== 'Brotli') {
+    throw new Error(`build-exe-for-python-sdk: --compress-quality applies to --compress=Brotli only, got ${compress}.`)
+  }
+  const quality = Number(raw)
+  const { min, max } = BROTLI_QUALITY_LIMITS
+  if (!Number.isInteger(quality) || quality < min || quality > max) {
+    throw new Error(`build-exe-for-python-sdk: --compress-quality must be an integer ${min}-${max}, got ${JSON.stringify(raw)}.`)
+  }
+  return quality
 }
 
 class BuildCli {
@@ -183,6 +210,8 @@ class BuildCli {
     readonly buildArtifacts: boolean,
     /** pkg archive compression; Brotli is the smallest and by far the slowest. */
     readonly compress: CompressType,
+    /** Brotli quality passed to the patched pkg; `undefined` keeps its default of 6. */
+    readonly compressQuality: number | undefined,
     /** Print every command and config patch instead of executing. */
     readonly dryRun: boolean,
   ) {}
@@ -225,7 +254,8 @@ class BuildCli {
     if (!isCompressType(compress)) {
       throw new Error(`build-exe-for-python-sdk: --compress must be one of ${COMPRESS_TYPES.join(' | ')}, got ${JSON.stringify(compress)}.`)
     }
-    return new BuildCli(targets, values['skip-build'], values['build-artifacts'], compress, values['dry-run'])
+    const compressQuality = parseCompressQuality(values['compress-quality'], compress)
+    return new BuildCli(targets, values['skip-build'], values['build-artifacts'], compress, compressQuality, values['dry-run'])
   }
 
   private static parseRaw(argv: string[]) {
@@ -236,6 +266,7 @@ class BuildCli {
         'skip-build': { type: 'boolean', default: false },
         'build-artifacts': { type: 'boolean', default: false },
         'compress': { type: 'string' },
+        'compress-quality': { type: 'string' },
         'dry-run': { type: 'boolean', default: false },
         'help': { type: 'boolean', default: false },
       },
@@ -251,6 +282,8 @@ class BuildCli {
       '  --skip-build           skip `pnpm run build` (lib/ artifacts must already exist).',
       '  --build-artifacts      run `pnpm run build:artifacts` instead, omitting the aggregate test and script typechecks.',
       '  --compress=<type>      pkg archive compression: None | GZip | Brotli | Zstd. Default: Brotli (smallest, slowest).',
+      `  --compress-quality=<n> Brotli quality 0-11 for --compress=Brotli, passed through ${BROTLI_QUALITY_ENV}.`,
+      '                         Default: 6, which keeps a local build fast; 11 trades that build time for the smallest archive.',
       '  --dry-run              print every command and config patch without executing.',
       '  --help                 print this help.',
       '',
@@ -398,6 +431,10 @@ class SingleExeBuild {
     await this.prepareNativePty(target)
     const platform = target.platform === 'macos' ? 'darwin' : target.platform === 'win' ? 'win32' : target.platform
     if (!this.cli.dryRun) await mkdir(this.outDir, { recursive: true })
+    const pkgEnvironment = this.brotliQualityEnvironment()
+    if (pkgEnvironment !== undefined) {
+      console.log(`build-exe-for-python-sdk: ${BROTLI_QUALITY_ENV}=${String(this.cli.compressQuality)} for pkg`)
+    }
     await this.runPnpm(`pkg ${target.spec}`, [
       'exec',
       'pkg',
@@ -409,7 +446,7 @@ class SingleExeBuild {
       target.spec,
       '--output',
       product,
-    ])
+    ], pkgEnvironment)
     if (!this.cli.dryRun && !existsSync(product)) {
       throw new Error(`build-exe-for-python-sdk: product ${product} is missing after the pkg run; inspect ${this.outDir}.`)
     }
@@ -438,6 +475,15 @@ class SingleExeBuild {
       await chmod(spawnHelper, 0o755)
     }
     return [product, ripgrep, spawnHelper, resources]
+  }
+
+  /**
+   * The pkg subprocess environment carrying `--compress-quality`.
+   * @returns the override, or `undefined` when pkg keeps the patch's default quality.
+   */
+  private brotliQualityEnvironment(): NodeJS.ProcessEnv | undefined {
+    if (this.cli.compressQuality === undefined) return undefined
+    return { [BROTLI_QUALITY_ENV]: String(this.cli.compressQuality) }
   }
 
   /** Copy the target ripgrep binary beside the executable so Node can spawn it outside pkg's virtual filesystem. */
@@ -574,8 +620,14 @@ class SingleExeBuild {
    * @param label - the step name used in logs and error messages.
    * @param command - the executable.
    * @param args - its arguments.
+   * @param environment - variables added to this subprocess environment only.
    */
-  private async run(label: string, command: string, args: string[]): Promise<void> {
+  private async run(
+    label: string,
+    command: string,
+    args: string[],
+    environment?: NodeJS.ProcessEnv,
+  ): Promise<void> {
     const printable = formatCommand(command, args)
     if (this.cli.dryRun) {
       console.log(`build-exe-for-python-sdk: [dry-run] ${printable}`)
@@ -587,7 +639,7 @@ class SingleExeBuild {
         cwd: root,
         stdio: 'inherit',
         // Artifact builds must not mutate or validate a developer's Git hooks.
-        env: { ...process.env, CI: 'true' },
+        env: { ...process.env, CI: 'true', ...environment },
       })
       child.once('error', (error) => {
         reject(new Error(`build-exe-for-python-sdk: ${label} failed to spawn: ${error.message} (${printable})`))
@@ -603,10 +655,15 @@ class SingleExeBuild {
     })
   }
 
-  /** Run pnpm through its JavaScript entrypoint when the caller supplies one. */
-  private async runPnpm(label: string, args: string[]): Promise<void> {
+  /**
+   * Run pnpm through its JavaScript entrypoint when the caller supplies one.
+   * @param label - the step name used in logs and error messages.
+   * @param args - pnpm arguments.
+   * @param environment - variables added to this pnpm subprocess environment only.
+   */
+  private async runPnpm(label: string, args: string[], environment?: NodeJS.ProcessEnv): Promise<void> {
     const [command, invocationArgs] = pnpmInvocation(args)
-    await this.run(label, command, invocationArgs)
+    await this.run(label, command, invocationArgs, environment)
   }
 }
 

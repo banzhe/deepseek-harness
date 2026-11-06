@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 const root = resolve(import.meta.dirname, '..')
 const script = resolve(root, 'scripts/build-exe-for-python-sdk.ts')
+/** Variable the pnpm-patched pkg reads for its Brotli quality. */
+const BROTLI_QUALITY_ENV = 'DSH_PKG_BROTLI_QUALITY'
 const temporaryDirectories: string[] = []
 
 afterEach(() => {
@@ -177,10 +179,65 @@ describe('Python runtime executable builder CLI', () => {
 
     expect(result.status).toBe(0)
     expect(result.stdout).toContain('exec pkg')
-    expect(result.stdout).toContain('--sea --compress Zstd --targets node24-macos-x64')
+    expect(result.stdout).toContain('--sea --compress Brotli --targets node24-macos-x64')
     expect(result.stdout).toContain('keep only node-pty prebuilds darwin-x64')
     expect(result.stdout).toContain('lock optional resource downloads and copy Office skills')
     expect(result.stdout).toContain(join(root, 'dist-exe', 'macos-x64'))
+  })
+
+  it('keeps the fast Brotli default and passes an explicit quality to the pkg patch', () => {
+    const fast = run(
+      { npm_execpath: 'C:\\tools\\pnpm.cjs' },
+      '--skip-build',
+      '--dry-run',
+      '--targets=node24-macos-arm64',
+    )
+    const smallest = run(
+      { npm_execpath: 'C:\\tools\\pnpm.cjs' },
+      '--skip-build',
+      '--dry-run',
+      '--targets=node24-macos-arm64',
+      '--compress-quality=11',
+    )
+
+    expect(fast.status, fast.stderr).toBe(0)
+    expect(fast.stdout).toContain('--sea --compress Brotli --targets node24-macos-arm64')
+    expect(fast.stdout).not.toContain(BROTLI_QUALITY_ENV)
+
+    expect(smallest.status, smallest.stderr).toBe(0)
+    expect(smallest.stdout).toContain('--sea --compress Brotli --targets node24-macos-arm64')
+    expect(smallest.stdout).toContain(`build-exe-for-python-sdk: ${BROTLI_QUALITY_ENV}=11 for pkg`)
+  })
+
+  it.each([
+    {
+      flags: ['--compress=Zstd', '--compress-quality=11'],
+      message: '--compress-quality applies to --compress=Brotli only, got Zstd.',
+    },
+    { flags: ['--compress-quality=12'], message: '--compress-quality must be an integer 0-11, got "12".' },
+    { flags: ['--compress-quality=fast'], message: '--compress-quality must be an integer 0-11, got "fast".' },
+  ])('rejects compression quality settings before any build step', ({ flags, message }) => {
+    const result = run(
+      { npm_execpath: 'C:\\tools\\pnpm.cjs' },
+      '--skip-build',
+      '--dry-run',
+      '--targets=node24-macos-arm64',
+      ...flags,
+    )
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain(message)
+    expect(result.stdout).toBe('')
+  })
+
+  it('sets the Brotli quality through the variable the pkg patch reads', () => {
+    const patch = readFileSync(resolve(root, 'patches/@yao-pkg__pkg@6.21.0.patch'), 'utf8')
+    const patchVariable = /process\.env\.([A-Z0-9_]+)/u.exec(patch)?.[1]
+    const scriptVariable = /const BROTLI_QUALITY_ENV = '([A-Z0-9_]+)'/u.exec(readFileSync(script, 'utf8'))?.[1]
+
+    expect(patchVariable).toBe(BROTLI_QUALITY_ENV)
+    expect(scriptVariable).toBe(BROTLI_QUALITY_ENV)
+    expect(patch).toContain(`process.env.${BROTLI_QUALITY_ENV} ?? "6"`)
   })
 
   it('rejects a Windows arm64 product before any build step', () => {
