@@ -37,6 +37,7 @@ import {
   imageRefFromValue,
   sniffImageMediaType,
 } from '../src/read-image.ts'
+import { PathScope } from '../src/base-path.ts'
 
 /** 1x1 red PNG (valid signature, IHDR, IDAT). */
 const PNG_1X1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64')
@@ -615,7 +616,7 @@ describe('argument and service preconditions', () => {
   it('defensively refuses execution without an attachment service', async () => {
     await writeFile(join(dir, 'red.png'), PNG_1X1)
     const ctx = await setup({ attachments: false })
-    applyReadImageTool(ctx)
+    applyReadImageTool(ctx, new PathScope(ctx, undefined))
     const result = await readImage(ctx, { file_path: 'red.png' }, agentOn('vision-model'))
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('no attachment service is mounted')

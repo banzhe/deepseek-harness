@@ -16,6 +16,7 @@ import { applyEditTool } from './edit.ts'
 import { applyReadImageTool } from './read-image.ts'
 import { READ_MAX_BYTES, READ_MAX_LINE_LENGTH } from './read-render.ts'
 import { FsSandboxController } from './sandbox.ts'
+import { PathScope } from './base-path.ts'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'tool-fs'
@@ -43,6 +44,12 @@ export interface Config {
   readMaxBytes?: number
   /** Files at or above this size stream instead of loading whole into memory. */
   readStreamMinSize?: number
+  /**
+   * Directory that confines every path the tools accept, for reads and mutations
+   * alike. A relative value resolves against the Session's current directory.
+   * Omit it, or leave it blank, to keep paths unrestricted.
+   */
+  basePath?: string
 }
 
 export const Config: z<Config> = z.object({
@@ -55,10 +62,11 @@ export const Config: z<Config> = z.object({
   readMaxLineLength: z.number().default(READ_MAX_LINE_LENGTH),
   readMaxBytes: z.number().default(READ_MAX_BYTES),
   readStreamMinSize: z.number().default(STREAM_MIN_SIZE),
+  basePath: z.string(),
 })
 
-/** Configuration after schemastery applied the defaults. */
-type ResolvedConfig = Required<Config>
+/** Configuration after schemastery applied the defaults; `basePath` has no default, so it stays optional. */
+type ResolvedConfig = Required<Omit<Config, 'basePath'>> & Pick<Config, 'basePath'>
 
 /** Every read cap counts lines/chars/bytes — a positive integer, or windowing arithmetic misbehaves silently. */
 function assertPositiveInteger(name: string, value: number): void {
@@ -75,20 +83,23 @@ export function apply(ctx: Context, config: Config): void {
   assertPositiveInteger('readMaxLineLength', resolved.readMaxLineLength)
   assertPositiveInteger('readMaxBytes', resolved.readMaxBytes)
   assertPositiveInteger('readStreamMinSize', resolved.readStreamMinSize)
+  // One path-admission instance for the whole suite: a configured basePath then
+  // holds for every tool, so no tool can be reached around it.
+  const paths = new PathScope(ctx, resolved.basePath)
   if (resolved.read) {
     applyReadTool(ctx, {
       limit: resolved.readLimit,
       maxLineLength: resolved.readMaxLineLength,
       maxBytes: resolved.readMaxBytes,
       streamMinSize: resolved.readStreamMinSize,
-    })
+    }, paths)
   }
   // read_image is composition-conditional: without a mounted attachment store
   // the deployment cannot durably commit image bytes, so the tool never
   // registers; the execute body keeps a defensive re-check for direct callers.
   if (resolved.readImage) {
     ctx.inject(['attachments'], (imageCtx) => {
-      applyReadImageTool(imageCtx)
+      applyReadImageTool(imageCtx, paths)
     })
   }
   // One escalation API shared by the mutating tools: advertisement gating,
@@ -96,8 +107,8 @@ export function apply(ctx: Context, config: Config): void {
   // the mounted ctx.fs confines (ctx.fs.sandboxMode).
   if (resolved.write || resolved.edit || resolved.applyPatch) {
     const sandbox = new FsSandboxController(ctx)
-    if (resolved.write) applyWriteTool(ctx, sandbox)
-    if (resolved.edit) applyEditTool(ctx, sandbox)
-    if (resolved.applyPatch) applyApplyPatchTool(ctx, sandbox)
+    if (resolved.write) applyWriteTool(ctx, sandbox, paths)
+    if (resolved.edit) applyEditTool(ctx, sandbox, paths)
+    if (resolved.applyPatch) applyApplyPatchTool(ctx, sandbox, paths)
   }
 }

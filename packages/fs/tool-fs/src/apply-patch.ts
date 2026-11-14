@@ -4,6 +4,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import { executePatch } from './patch/index.ts'
 import { patchOutputSchema, patchToolValue, renderPatch, patchPresentationMeta } from './apply-patch-output.ts'
 import { presentPatchCall, presentPatchResult } from './apply-patch-presentation.ts'
+import type { PathScope } from './base-path.ts'
 import type { FsEscalationArgs, FsSandboxController } from './sandbox.ts'
 
 /** Model arguments after tool-schema validation. */
@@ -13,8 +14,9 @@ interface ApplyPatchArgs extends FsEscalationArgs { input: string }
  * Register the patch tool and scope-aware guidance using the shared mutation controller.
  * @param ctx - plugin effect scope and filesystem services.
  * @param sandbox - per-call policy resolver and denial mapper.
+ * @param paths - path admission for this tool instance, including any configured `basePath`.
  */
-export function applyApplyPatchTool(ctx: Context, sandbox: FsSandboxController): void {
+export function applyApplyPatchTool(ctx: Context, sandbox: FsSandboxController, paths: PathScope): void {
   ctx.systemPrompt.section({
     name: 'tool:apply_patch', order: ctx.systemPrompt.getSectionOrder('TOOL_APPLY_PATCH'),
     text: ({ scope }) => ctx.tools.get('apply_patch', scope) === undefined ? ''
@@ -44,7 +46,7 @@ export function applyApplyPatchTool(ctx: Context, sandbox: FsSandboxController):
     },
     async execute(args: ApplyPatchArgs, exec) {
       const sandboxPolicy = await sandbox.resolvePolicy('apply_patch', args, exec)
-      return patchToolValue(await executePatch(ctx, sandbox, exec, { patch: args.input, sandboxPolicy }))
+      return patchToolValue(await executePatch(ctx, sandbox, paths, exec, { patch: args.input, sandboxPolicy }))
     },
     presentCall: args => presentPatchCall(args.input),
     presentResult: (_args, result) => presentPatchResult(result),

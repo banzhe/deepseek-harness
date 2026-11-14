@@ -2,6 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { PatchParseError } from '@deepseek-ai/dsh-fs-patch'
 import type { ToolExecution } from '@deepseek-ai/dsh-tools'
+import type { PathScope } from '../base-path.ts'
 import type { FsSandboxController } from '../sandbox.ts'
 import { commitPatch } from './execute.ts'
 import { planPatch } from './plan.ts'
@@ -14,16 +15,17 @@ export type { PatchExecutionReport, PatchExecutionRequest, PatchFailure, PatchFa
  * Preflight a whole patch before sequential guarded mutations; business failures become records.
  * @param ctx - mounted filesystem and observation-policy events.
  * @param sandbox - denial mapper shared with existing filesystem tools.
+ * @param paths - path admission shared with the other filesystem tools, including any configured `basePath`.
  * @param exec - session cwd, observation actor, and cancellation signal.
  * @param request - raw patch and policy already resolved by the caller.
  * @returns the syntax failure, the preflight refusals, or ordered commit outcomes.
  * @throws unexpected programming defects without starting further operations.
  */
 export async function executePatch(
-  ctx: Context, sandbox: FsSandboxController, exec: ToolExecution, request: PatchExecutionRequest,
+  ctx: Context, sandbox: FsSandboxController, paths: PathScope, exec: ToolExecution, request: PatchExecutionRequest,
 ): Promise<PatchExecutionReport> {
   let plan
-  try { plan = await planPatch(ctx, sandbox, exec, request) } catch (error) {
+  try { plan = await planPatch(sandbox, paths, exec, request) } catch (error) {
     if (!(error instanceof PatchParseError)) throw error
     return { phase: 'syntax', failure: { code: 'PATCH_SYNTAX', message: error.message } }
   }

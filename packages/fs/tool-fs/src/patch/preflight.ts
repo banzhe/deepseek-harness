@@ -7,7 +7,6 @@ import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { ToolExecution } from '@deepseek-ai/dsh-tools'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import type { FsSandboxController } from '../sandbox.ts'
-import { sessionResolveOptions } from '../session-cwd.ts'
 import { destinationIntent, patchFailure, sourceIntent } from './plan.ts'
 import type { PatchFailure, PatchRefusal, PlannedOperation } from './types.ts'
 
@@ -91,7 +90,7 @@ class Preflight {
       throw new FsError(`cannot move "${operation.target.displayPath}" to itself`, 'FS_SAME_TARGET')
     }
     if (operation.kind === 'delete' || operation.kind === 'move') {
-      const info = await this.ctx.fs.lstat(operation.rawPath, await sessionResolveOptions(this.ctx, this.exec))
+      const info = await this.ctx.fs.lstat(operation.rawPath, operation.options, this.exec.signal)
       if (info?.type === 'symlink') return { code: 'PATCH_SYMLINK_SOURCE',
         message: `cannot ${operation.kind} "${operation.target.displayPath}": path is a symbolic link — operate on its target path instead` }
     }

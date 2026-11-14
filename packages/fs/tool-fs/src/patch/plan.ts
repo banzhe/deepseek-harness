@@ -7,29 +7,29 @@ import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { ToolExecution } from '@deepseek-ai/dsh-tools'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import { remediateFsError } from '../error.ts'
+import type { PathScope, ScopedTarget } from '../base-path.ts'
 import type { FsSandboxController } from '../sandbox.ts'
-import { sessionResolveOptions } from '../session-cwd.ts'
 import type { PatchExecutionRequest, PatchFailure, PatchOperationRecord, PatchPlan, PlannedOperation } from './types.ts'
 
 /**
  * Resolve every operation without dropping repeated aliases or splitting moves.
- * @param ctx - filesystem service owner.
  * @param sandbox - filesystem diagnostic mapper.
+ * @param paths - path admission shared with the other filesystem tools, including any configured `basePath`.
  * @param exec - session cwd and execution signal.
  * @param request - raw patch and resolved per-call policy.
  * @returns resolved operations sharing one target per canonical key, plus resolution refusals.
  */
 export async function planPatch(
-  ctx: Context, sandbox: FsSandboxController, exec: ToolExecution, request: PatchExecutionRequest,
+  sandbox: FsSandboxController, paths: PathScope, exec: ToolExecution, request: PatchExecutionRequest,
 ): Promise<PatchPlan> {
   const parsed = parsePatch(request.patch)
   const targets = new Map<FsTargetKey, FsTarget>()
-  const resolve = async (path: string): Promise<FsTarget> => {
-    const target = await ctx.fs.resolve(path, await sessionResolveOptions(ctx, exec))
-    const prior = targets.get(target.targetKey)
-    if (prior) return prior
-    targets.set(target.targetKey, target)
-    return target
+  const resolve = async (path: string): Promise<ScopedTarget> => {
+    const resolved = await paths.resolve(path, exec)
+    const prior = targets.get(resolved.target.targetKey)
+    if (prior) return { target: prior, options: resolved.options }
+    targets.set(resolved.target.targetKey, resolved.target)
+    return resolved
   }
   const result: PatchPlan = { operations: [], refusals: [] }
   for (const [index, operation] of parsed.entries()) {
@@ -40,9 +40,9 @@ export async function planPatch(
     }
     let failurePath = operation.path
     try {
-      const target = await resolve(operation.path)
+      const { target, options } = await resolve(operation.path)
       record.path = target.displayPath
-      const base = { target, rawPath: operation.path, record }
+      const base = { target, rawPath: operation.path, options, record }
       switch (operation.kind) {
         case 'add': result.operations.push({ ...base, kind: 'add', content: operation.content }); break
         case 'delete': result.operations.push({ ...base, kind: 'delete' }); break
@@ -50,7 +50,7 @@ export async function planPatch(
           if (operation.moveTo === undefined) result.operations.push({ ...base, kind: 'update', hunks: operation.hunks })
           else {
             failurePath = operation.moveTo
-            const destination = await resolve(operation.moveTo)
+            const { target: destination } = await resolve(operation.moveTo)
             record.destination = destination.displayPath
             result.operations.push({ ...base, kind: 'move', destination, hunks: operation.hunks })
           }

@@ -22,6 +22,7 @@ import type {} from '@deepseek-ai/dsh-fs'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import { ImageInputError } from './image-error.ts'
 import { resolveRegularReadTarget } from './read-target.ts'
+import type { PathScope } from './base-path.ts'
 
 /** Extensions `read_image` accepts; magic-byte validation at the attachment service stays authoritative. */
 const IMAGE_EXTENSIONS: Readonly<Record<string, ImageMediaType>> = {
@@ -282,8 +283,9 @@ function saveFailureDetail(error: AttachmentError, attachments: AttachmentStore,
  * direct callers and gates on the calling route's declared image input.
  * @param ctx - the registration scope; execution uses its `fs` service plus
  *   the optional `attachments`/`llm` services.
+ * @param paths - path admission for this tool instance, including any configured `basePath`.
  */
-export function applyReadImageTool(ctx: Context): void {
+export function applyReadImageTool(ctx: Context, paths: PathScope): void {
   ctx.tools.register(defineTool({
     name: 'read_image',
     description: 'Read a PNG/JPEG/WebP/GIF file and return the image itself. '
@@ -336,7 +338,7 @@ export function applyReadImageTool(ctx: Context): void {
       if (declared !== undefined) assertDeploymentAccepts(attachments, declared, args.file_path)
       await assertImageCapableRoute(ctx, exec, args.file_path)
 
-      const { target, info } = await resolveRegularReadTarget(ctx, exec, args.file_path)
+      const { target, info } = await resolveRegularReadTarget(ctx, paths, exec, args.file_path)
 
       // The tool result is one message carrying one image, so the per-message
       // aggregate bound applies beside the per-image bound.

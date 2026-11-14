@@ -23,6 +23,7 @@ import * as ToolFs from '../../src/index.ts'
 import { executePatch } from '../../src/patch/index.ts'
 import type { PatchOperationRecord } from '../../src/patch/types.ts'
 import { FsSandboxController } from '../../src/sandbox.ts'
+import { PathScope } from '../../src/base-path.ts'
 
 export const patch = (...operations: string[]) => ['*** Begin Patch', ...operations, '*** End Patch'].join('\n')
 export const add = (path: string, content = 'new') => `*** Add File: ${path}\n+${content}`
@@ -31,7 +32,7 @@ export const remove = (path: string) => `*** Delete File: ${path}`
 export const move = (source: string, destination: string, before = 'old', after = 'new') =>
   `*** Update File: ${source}\n*** Move to: ${destination}\n@@\n-${before}\n+${after}`
 
-export async function setup(options: { policy?: boolean; mode?: SandboxMode; provider?: typeof LocalFileSystem; applyPatch?: boolean; toolMode?: 'native' | 'ptc' } = {}) {
+export async function setup(options: { policy?: boolean; mode?: SandboxMode; provider?: typeof LocalFileSystem; applyPatch?: boolean; toolMode?: 'native' | 'ptc'; basePath?: string } = {}) {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'dsh-patch-executor-')))
   onTestFinished(() => rm(root, { recursive: true, force: true }))
   const workspace = join(root, 'workspace')
@@ -51,7 +52,10 @@ export async function setup(options: { policy?: boolean; mode?: SandboxMode; pro
     await ctx.plugin(SandboxedFileSystem, { cwd: providerRoot })
   } else await ctx.plugin(options.provider ?? LocalFileSystem, { cwd: providerRoot })
   if (options.policy !== false) await ctx.plugin(FsPolicy)
-  const toolFiber = await ctx.plugin(ToolFs, { applyPatch: options.applyPatch ?? true })
+  const toolFiber = await ctx.plugin(ToolFs, {
+    applyPatch: options.applyPatch ?? true,
+    ...options.basePath === undefined ? {} : { basePath: options.basePath },
+  })
   const fs = ctx.fs as LocalFileSystem
   const controller = new AbortController()
   const exec: ToolExecution = {
@@ -61,6 +65,7 @@ export async function setup(options: { policy?: boolean; mode?: SandboxMode; pro
     agent: { session: { header: { cwd: workspace } } } as never,
   }
   const sandbox = new FsSandboxController(ctx)
+  const paths = new PathScope(ctx, options.basePath)
   const policy = options.mode === undefined ? undefined : { mode: options.mode, workspaceRoot: workspace }
   const observations: { path: string; observation: FsObservation }[] = []
   ctx.on('fs/observed', (target, observation) => { observations.push({ path: target.displayPath, observation }) })
@@ -86,7 +91,7 @@ export async function setup(options: { policy?: boolean; mode?: SandboxMode; pro
     kind, path: resolve(workspace, name), index, patchLine,
     ...(destination === undefined ? {} : { destination: resolve(workspace, destination) }),
   })
-  const run = (text: string) => executePatch(ctx, sandbox, exec, { patch: text, sandboxPolicy: policy })
+  const run = (text: string) => executePatch(ctx, sandbox, paths, exec, { patch: text, sandboxPolicy: policy })
   const bytes = (name: string) => readFile(resolve(workspace, name), 'utf8')
   const editIntent = async (name: string) => ctx.waterfall('fs/edit-intent', await target(name), exec, () => undefined)
   const version = async (name: string) => (await fs.stat(await target(name)))?.version ?? FsVersion('missing-fixture')

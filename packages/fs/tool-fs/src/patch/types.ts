@@ -2,6 +2,7 @@
 import type { FsErrorCode, FsTarget } from '@deepseek-ai/dsh-fs'
 import type { PatchHunk } from '@deepseek-ai/dsh-fs-patch'
 import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
+import type { ScopedResolveOptions } from '../session-cwd.ts'
 
 /** One request after the caller resolves its per-call sandbox policy. */
 export interface PatchExecutionRequest {
@@ -67,11 +68,12 @@ export type PatchExecutionReport =
   | { phase: 'preflight'; refusals: [PatchRefusal, ...PatchRefusal[]] }
   | { phase: 'commit'; outcomes: PatchOperationOutcome[]; affectedPaths: string[]; cancelled: boolean }
 
-/** Resolved operation with raw source spelling retained for no-follow inspection. */
+/** Resolved operation with raw source spelling and resolution options retained for no-follow inspection. */
 export type PlannedOperation = {
   record: PatchOperationRecord
   target: FsTarget
   rawPath: string
+  options: ScopedResolveOptions
 } & (
   | { kind: 'add'; content: string }
   | { kind: 'update'; hunks: readonly PatchHunk[] }

@@ -10,6 +10,7 @@ import type { GenericCallView, ReadResultView, ToolResult } from '@deepseek-ai/d
 import type {} from '@deepseek-ai/dsh-fs'
 import { buildWindow, formatReadOutput, langFromPath, readMetaFromMeta } from './read-render.ts'
 import { resolveRegularReadTarget } from './read-target.ts'
+import type { PathScope } from './base-path.ts'
 
 /** Default and maximum number of lines returned by one `read` call (the `readLimit` config). */
 export const READ_LIMIT = 2000
@@ -64,8 +65,9 @@ export function parseReadArgs(args: { file_path: string; offset?: number; limit?
  * Register the `read` tool and its scope-aware system-prompt guidance.
  * @param ctx - the plugin context; registrations are effects scoped to it, and execution uses its `fs` service.
  * @param caps - the deployment's resolved read caps (plugin config after defaulting).
+ * @param paths - path admission for this tool instance, including any configured `basePath`.
  */
-export function applyReadTool(ctx: Context, caps: ReadToolCaps): void {
+export function applyReadTool(ctx: Context, caps: ReadToolCaps, paths: PathScope): void {
   ctx.systemPrompt.section({
     name: 'tool:read',
     order: ctx.systemPrompt.getSectionOrder('TOOL_READ'),
@@ -138,7 +140,7 @@ export function applyReadTool(ctx: Context, caps: ReadToolCaps): void {
       const input = parseReadArgs(args, caps.limit)
       // One stat: absence observation OR type check + size routing + present version.
       // A concurrent write can only make a later guarded mutation fail stale and require reread.
-      const { target, info } = await resolveRegularReadTarget(ctx, exec, input.filePath)
+      const { target, info } = await resolveRegularReadTarget(ctx, paths, exec, input.filePath)
 
       // Stream when the file is large OR size is unknown, so a size-less backend
       // never buffers an arbitrarily large file.

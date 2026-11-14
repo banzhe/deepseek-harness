@@ -13,7 +13,7 @@ import type {} from '@deepseek-ai/dsh-fs'
 import { computeHunkDiffs, diffsFromMeta, pathFromMeta } from './diff.ts'
 import { remediateFsError } from './error.ts'
 import { mutationResult } from './mutation-result.ts'
-import { sessionResolveOptions } from './session-cwd.ts'
+import type { PathScope } from './base-path.ts'
 import type { FsSandboxController } from './sandbox.ts'
 
 /**
@@ -58,8 +58,9 @@ interface WriteToolArgs {
  * Register the `write` tool and its scope-aware system-prompt guidance.
  * @param ctx - the plugin context; registrations are effects scoped to it, and execution uses its `fs` service.
  * @param sandbox - the shared sandbox-escalation API (advertisement, mode stamping, denial mapping).
+ * @param paths - path admission for this tool instance, including any configured `basePath`.
  */
-export function applyWriteTool(ctx: Context, sandbox: FsSandboxController): void {
+export function applyWriteTool(ctx: Context, sandbox: FsSandboxController, paths: PathScope): void {
   ctx.systemPrompt.section({
     name: 'tool:write',
     order: ctx.systemPrompt.getSectionOrder('TOOL_WRITE'),
@@ -111,11 +112,11 @@ export function applyWriteTool(ctx: Context, sandbox: FsSandboxController): void
     },
     async execute(args: WriteToolArgs, exec) {
       const input = parseWriteArgs(args)
+      const { target } = await paths.resolve(input.filePath, exec)
       // Resolve the per-call sandbox policy (approved mode > session override
       // > backend default, plus the session cwd root) BEFORE anything executes;
       // an escalating call throws its distinct text on any non-grant.
       const sandboxPolicy = await sandbox.resolvePolicy('write', args, exec)
-      const target = await ctx.fs.resolve(input.filePath, await sessionResolveOptions(ctx, exec))
       // Single-slot decision: the policy plugin produces createIfAbsent/
       // replaceIfVersion; the bare default is undefined (unconditional). No stat.
       const intent = await ctx.waterfall('fs/write-intent', target, exec, () => undefined)
