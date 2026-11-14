@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use `dsh-tool-fs` to let a model read UTF-8 files with line numbers, read supported images, create or atomically replace files, apply targeted literal edits, and apply multi-file patches. Results are capped, and failures provide stable error codes and recovery instructions. A configured `basePath` confines every path the tools accept. Add `dsh-fs-observation-policy` when writes and edits must follow a successful read; without it, mutations remain atomic but are unconditional. Image reads require durable attachment storage and an image-capable routed model. Choose the sibling discovery package for glob or grep searches.
+Use `dsh-tool-fs` to let a model read UTF-8 files with line numbers, read supported images, create or atomically replace files, apply targeted literal edits, and apply multi-file patches. Results are capped, and failures provide stable error codes and recovery instructions. Add `dsh-fs-observation-policy` when writes and edits must follow a successful read; without it, mutations remain atomic but are unconditional. Image reads require durable attachment storage and an image-capable routed model. Choose the sibling discovery package for glob or grep searches.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ Use `dsh-tool-fs` to let a model read UTF-8 files with line numbers, read suppor
 <a id="use-this-package"></a>
 ## Use this package
 
-Relative paths use the Session's current working directory. A directory change affects subsequent reads and mutations without changing sandbox permission roots. A configured `basePath` narrows that directory to a subtree the tools cannot leave. Successful results return the canonical absolute path from `fs.processPath`, and root result metadata retains that operation-time path for replay and navigation.
+Relative paths use the Session's current working directory. A directory change affects subsequent reads and mutations without changing sandbox permission roots. Successful results return the canonical absolute path from `fs.processPath`, and root result metadata retains that operation-time path for replay and navigation.
 
 Mount the tools after a `ctx.fs` backend and, for read-before-write/edit behavior, the policy plugin. The model then gets line-numbered reads, atomic writes and edits, and — with an attachment store mounted — image reads; every result is capped, and failures carry stable codes with recovery instructions.
 
@@ -55,7 +55,7 @@ Field names are snake_case to match Claude Code and existing harness tool schema
 
 ### Configuration
 
-All keys are optional. The `read`, `readImage`, `write`, and `edit` switches default to `true`; set a switch to `false` to omit that tool and its guidance. `applyPatch` defaults to `false`; [`dsh-base`](../../bundle/base/cordis.patch.yml) and the Web `standard` preset enable it on their `tool-fs` rows, while the Web `ptc` and `cordis` presets state `applyPatch: false`, and changing that one line adds or drops the tool beside `edit`. All five tools may be disabled. Enabling `readImage` still requires an attachment store and an image-capable model. Read caps remain validated when `read` is disabled. `basePath` has no default: paths stay unrestricted until a deployment sets it.
+All keys are optional. The `read`, `readImage`, `write`, and `edit` switches default to `true`; set a switch to `false` to omit that tool and its guidance. `applyPatch` defaults to `false`; [`dsh-base`](../../bundle/base/cordis.patch.yml) and the Web `standard` preset enable it on their `tool-fs` rows, while the Web `ptc` and `cordis` presets state `applyPatch: false`, and changing that one line adds or drops the tool beside `edit`. All five tools may be disabled. Enabling `readImage` still requires an attachment store and an image-capable model. Read caps remain validated when `read` is disabled.
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -68,21 +68,14 @@ All keys are optional. The `read`, `readImage`, `write`, and `edit` switches def
 | `readMaxLineLength` | `2000` | Characters kept per line before truncation |
 | `readMaxBytes` | `51200` | Byte cap on one `read` call's selected lines; overflow ends the window with a capped footer |
 | `readStreamMinSize` | `10485760` | Files at or above this size (or of unknown size) stream instead of loading whole into memory |
-| `basePath` | unset | Directory every tool path must resolve inside; unset or blank leaves paths unrestricted |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-tool-fs) is the exhaustive source for every accepted field and its JSDoc.
 
 With `fs-observation-policy` mounted and `read` disabled, `write` can still create files, and successful writes or edits record the versions needed for later mutations in that session. Existing unobserved files remain protected; disabling `read` does not relax the policy. Another filesystem reader must emit `fs/observed` for an existing file to become observed.
 
-### Path confinement
-
-Set `basePath` to confine every tool path to one directory. A relative value resolves against the Session's current working directory, and the tools then accept either spelling: the Session-relative one (`sub/file.txt` under `basePath: 'sub'`) or the directory-relative one (`file.txt`), plus absolute paths that land inside. Containment is decided by `ctx.fs.contains` over the resolved targets, so a sibling directory that merely shares the name prefix is outside.
-
-A spelling that climbs above its starting directory with `..`, or an absolute path outside the directory, is refused with `Path "<path>" is outside the configured basePath "<basePath>".` (`FS_PERMISSION_DENIED`) before any provider read or mutation. That covers `read`, `read_image`, `write`, `edit`, and every path an `apply_patch` names, move destinations included. The refusal is a configuration boundary of the tool instance rather than a sandbox mode, so `sandbox_permissions` cannot widen it. Leaving `basePath` unset or blank keeps paths unrestricted.
-
 ### Policy and sandbox behavior
 
-Path authorization for `read` and `read_image` belongs entirely to `ctx.fs`, apart from a configured `basePath`, which this package enforces before any provider read or mutation; media-type declarations and file signatures only decide whether `read_image` accepts the bytes returned by that backend.
+Path authorization for `read` and `read_image` belongs entirely to `ctx.fs`; media-type declarations and file signatures only decide whether `read_image` accepts the bytes returned by that backend.
 
 With the policy plugin mounted, `write` and `edit` obtain their guard from the `fs/*` intent slots, so an unread target or a stale observation fails with `FS_NOT_OBSERVED` or `FS_STALE_VERSION` and a recovery instruction. Under a confining backend (`fs-sandbox`), `write`/`edit` additionally advertise `sandbox_permissions` and `justification`; a denied mutation returns the `[sandbox: file access denied under <mode> mode]` marker with the same-turn escalation hint, and an approved retry may stamp a strictly wider mode for that one call. When `sandbox_permissions` is omitted or repeats the call's effective mode, `justification` may be omitted, empty, or whitespace-only; no approval is requested. A different mode still requires a non-empty reason, and widening requires approval. A non-empty reason without a mode is rejected. These exceptions do not bypass observation checks or filesystem denials. The justification asks the model to use the language of the current user request.
 
@@ -92,7 +85,7 @@ For `apply_patch`, syntax and preflight refusals throw with `isError: true` befo
 
 `read_image` refusals it makes before storing the image throw `ImageInputError extends HarnessError` with an `ImageInputErrorCode`: `IMAGE_UNSUPPORTED_MODEL` (switch to an image-capable model) or `IMAGE_UNSUPPORTED_FORMAT` (the extension, file signature, or deployment media types exclude the format; convert the file). Refusals from the attachment store keep their `AttachmentError` `name` and `code`, such as `INVALID_IMAGE`, `IMAGE_TYPE_MISMATCH`, or `IMAGE_DIMENSION_TOO_LARGE`; for codes with a known remedy, the message names the file and the next step, and the store error is the `cause`. An empty `file_path` throws `ToolArgsError` (`INVALID_ARGS`); a missing attachment service or an unresolvable model route throws `ToolContextUnavailableError` (`TOOL_CONTEXT_UNAVAILABLE`); filesystem failures keep their `FsError` codes; any other store failure, such as an `AbortError`, another `HarnessError`, or a defect, passes through unchanged.
 
-Failures are normalized as `Error: <message>` with a structured code preserved for callers. Stable messages include the `ToolArgsError` (`INVALID_ARGS`) messages `invalid arguments: file_path must be a non-empty string` and `invalid arguments: limit must be less than or equal to <max>`, `cannot read "<path>": not found`, `cannot read "<path>": not a regular file`, the `basePath` refusal `Path "<path>" is outside the configured basePath "<basePath>".`, and the image-route refusal `cannot read "<path>" as an image: model "<model>" does not declare image input; switch to an image-capable model to read images`. `FS_NOT_OBSERVED` is normalized to `cannot modify "<path>": file has not been read — read the file, then retry`, independent of whether the policy or provider rejected the operation; `FS_STALE_VERSION` retains the provider's reason and appends `— re-read the file, then retry`. After the reread confirms absence, `edit` reports `FS_NOT_FOUND` instead of repeating a stale remedy, while `write` uses guarded creation.
+Failures are normalized as `Error: <message>` with a structured code preserved for callers. Stable messages include the `ToolArgsError` (`INVALID_ARGS`) messages `invalid arguments: file_path must be a non-empty string` and `invalid arguments: limit must be less than or equal to <max>`, `cannot read "<path>": not found`, `cannot read "<path>": not a regular file`, and the image-route refusal `cannot read "<path>" as an image: model "<model>" does not declare image input; switch to an image-capable model to read images`. `FS_NOT_OBSERVED` is normalized to `cannot modify "<path>": file has not been read — read the file, then retry`, independent of whether the policy or provider rejected the operation; `FS_STALE_VERSION` retains the provider's reason and appends `— re-read the file, then retry`. After the reread confirms absence, `edit` reports `FS_NOT_FOUND` instead of repeating a stale remedy, while `write` uses guarded creation.
 
 -----
 
@@ -114,7 +107,6 @@ The tools are the executor; policy is an event gate. The tools inject no policy 
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: `Config`, tool composition, `read_image` attachments gate |
 | [`src/read.ts`](src/read.ts) | `read` executor: one stat, streaming decision, window build, observation |
-| [`src/base-path.ts`](src/base-path.ts) | Path admission for one tool instance: `basePath` containment and its refusal |
 | [`src/read-image.ts`](src/read-image.ts) | `read_image` executor: route and media-type gates, bounded bytes, attachment save |
 | [`src/image-error.ts`](src/image-error.ts) | `ImageInputError` and the closed codes for refusals `read_image` makes itself |
 | [`src/write.ts`](src/write.ts) | `write` executor: intent waterfall, atomic write, observation |
@@ -132,7 +124,7 @@ The tools are the executor; policy is an event gate. The tools inject no policy 
 
 ### Per-tool flow
 
-All four tools share one flow shape: resolve the path with the calling session's cwd through the instance's `basePath` scope, run the applicable gate, perform exactly one provider operation, and emit `fs/observed` only after success. `read` and `read_image` pay one `stat` for type and size routing; `write` and `edit` pay none because their guard comes from the intent slot, and provider failures surface as typed `FsError` results. The per-tool executors live in `src/read.ts`, `src/read-image.ts`, `src/write.ts`, and `src/edit.ts`.
+All four tools share one flow shape: resolve the path with the calling session's cwd, run the applicable gate, perform exactly one provider operation, and emit `fs/observed` only after success. `read` and `read_image` pay one `stat` for type and size routing; `write` and `edit` pay none because their guard comes from the intent slot, and provider failures surface as typed `FsError` results. The per-tool executors live in `src/read.ts`, `src/read-image.ts`, `src/write.ts`, and `src/edit.ts`.
 
 The internal patch executor accepts a raw patch and an already resolved sandbox policy. It builds an ordered plan, preflights all operations against simulated state, then commits through `writeText`, `patchText`, `deleteFile`, or one `moveFile` call. A refused preflight operation has no simulated effect, and any refusal prevents every write. Sandbox containment is not simulated: the provider decides it at each commit, as for `write` and `edit`, so a denied operation stops the patch with the earlier operations retained. A syntax report carries the parser failure; a preflight report lists the refused operations; a commit report keeps one entry per operation with `completed`, `failed`, `unknown`, or `skipped` status and known LF text changes. Unresolved paths retain their raw patch spelling; resolved paths use provider display paths. Programming errors reject the call.
 
@@ -201,7 +193,7 @@ Prefix-stable while the visible tool set, plugin scope, and guidance text are un
 
 #### What the model sees
 
-The model sees the generated [`read`, `read_image`, `write`, and `edit` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-fs), with snake_case arguments; a configured `basePath` changes no schema text. The image tool appears only while a durable attachment store is mounted; its schema is route-independent, and the strict gate refuses at execution. Scoped tool restrictions can remove any definition for one agent.
+The model sees the generated [`read`, `read_image`, `write`, and `edit` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-fs), with snake_case arguments. The image tool appears only while a durable attachment store is mounted; its schema is route-independent, and the strict gate refuses at execution. Scoped tool restrictions can remove any definition for one agent.
 
 #### Token effect
 
@@ -257,7 +249,7 @@ Append-only; newly visible content follows the reusable request prefix and does 
 
 #### What the model sees
 
-Failures are normalized as `Error: <message>`. This package's stable validation messages are `ToolArgsError` (`INVALID_ARGS`) messages prefixed with `invalid arguments: `: `file_path must be a non-empty string`, `limit must be less than or equal to <max>`, `old_string must be a non-empty string`, and `old_string and new_string must differ`. Its stable read messages are `cannot read "<path>": not found`, `cannot read "<path>": not a regular file`, `offset <offset> is out of range for "<path>" (<total> lines)`, `cannot read "<path>": the <ext> extension does not declare a supported image format; read_image accepts PNG/JPEG/WebP/GIF files, including extension-less files in those formats`, `cannot read "<path>": the file content is not a supported image format; read_image accepts PNG/JPEG/WebP/GIF`, `cannot read "<path>": the bytes do not decode as a supported PNG/JPEG/WebP/GIF image; the file may be truncated or corrupt`, `cannot read "<path>" as an image: model "<model>" does not declare image input; switch to an image-capable model to read images`, and the mismatch repair `cannot read "<path>": the <ext> extension declares <type>, but the bytes use a different image format; rename the file to match its actual format if it is PNG/JPEG/WebP/GIF, or convert it to one of those formats` (an extension-less mismatch reports `cannot read "<path>": the file signature claims <type>, but the bytes decode as a different image format; the file may be corrupt`). A failed 16-bit conversion reports `cannot read "<path>": the 16-bit PNG could not be converted to the normalized 8-bit sRGB form; convert it to an 8-bit PNG/JPEG/WebP and retry`. A path outside a configured `basePath` reports `Path "<path>" is outside the configured basePath "<basePath>".` with `FS_PERMISSION_DENIED`. Provider and policy templates are quoted in their package READMEs. The model-facing error wrapper normalizes every `FS_NOT_OBSERVED` source to `cannot modify "<path>": file has not been read — read the file, then retry`; `FS_STALE_VERSION` keeps the provider's reason and adds `— re-read the file, then retry`. Both retain the structured error code and original cause. After that reread confirms absence, `edit` reports `FS_NOT_FOUND` instead of repeating a stale remedy, while `write` uses guarded creation.
+Failures are normalized as `Error: <message>`. This package's stable validation messages are `ToolArgsError` (`INVALID_ARGS`) messages prefixed with `invalid arguments: `: `file_path must be a non-empty string`, `limit must be less than or equal to <max>`, `old_string must be a non-empty string`, and `old_string and new_string must differ`. Its stable read messages are `cannot read "<path>": not found`, `cannot read "<path>": not a regular file`, `offset <offset> is out of range for "<path>" (<total> lines)`, `cannot read "<path>": the <ext> extension does not declare a supported image format; read_image accepts PNG/JPEG/WebP/GIF files, including extension-less files in those formats`, `cannot read "<path>": the file content is not a supported image format; read_image accepts PNG/JPEG/WebP/GIF`, `cannot read "<path>": the bytes do not decode as a supported PNG/JPEG/WebP/GIF image; the file may be truncated or corrupt`, `cannot read "<path>" as an image: model "<model>" does not declare image input; switch to an image-capable model to read images`, and the mismatch repair `cannot read "<path>": the <ext> extension declares <type>, but the bytes use a different image format; rename the file to match its actual format if it is PNG/JPEG/WebP/GIF, or convert it to one of those formats` (an extension-less mismatch reports `cannot read "<path>": the file signature claims <type>, but the bytes decode as a different image format; the file may be corrupt`). A failed 16-bit conversion reports `cannot read "<path>": the 16-bit PNG could not be converted to the normalized 8-bit sRGB form; convert it to an 8-bit PNG/JPEG/WebP and retry`. Provider and policy templates are quoted in their package READMEs. The model-facing error wrapper normalizes every `FS_NOT_OBSERVED` source to `cannot modify "<path>": file has not been read — read the file, then retry`; `FS_STALE_VERSION` keeps the provider's reason and adds `— re-read the file, then retry`. Both retain the structured error code and original cause. After that reread confirms absence, `edit` reports `FS_NOT_FOUND` instead of repeating a stale remedy, while `write` uses guarded creation.
 
 #### Token effect
 
@@ -271,7 +263,7 @@ Append-only; newly visible content follows the reusable request prefix and does 
 
 #### What the model sees
 
-The `apply_patch` schema requires one `input` string containing `*** Begin Patch` / `*** End Patch`, Add/Update/Delete headers, optional Move to, and context/add/remove hunk lines. Paths are Session-relative, or relative to a configured `basePath`. A confining backend adds the same escalation fields as write/edit. Success lines group A/M/D and a completed move reports `M <destination>`, matching Codex rust-v0.158.0. An empty patch renders `Success. No operations in patch.`. A stopped patch includes only the applicable Completed, Failed, Outcome unknown and Not executed sections; unknown outcomes end with the re-read remedy. Syntax errors keep the parser message.
+The `apply_patch` schema requires one `input` string containing `*** Begin Patch` / `*** End Patch`, Add/Update/Delete headers, optional Move to, and context/add/remove hunk lines. Paths are Session-relative. A confining backend adds the same escalation fields as write/edit. Success lines group A/M/D and a completed move reports `M <destination>`, matching Codex rust-v0.158.0. An empty patch renders `Success. No operations in patch.`. A stopped patch includes only the applicable Completed, Failed, Outcome unknown and Not executed sections; unknown outcomes end with the re-read remedy. Syntax errors keep the parser message.
 
 ##### System guidance
 
