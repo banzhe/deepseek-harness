@@ -294,7 +294,7 @@ describe('HMR exact config paths', () => {
     configWatch.create = (_paths, options) => {
       watcher = new FSWatcher(options)
       // Use Chokidar's real normalization with deterministic event delivery.
-      Reflect.set(watcher, '_readyEmitted', true)
+      watcher.readyEmitted = true
       queueMicrotask(() => { watcher.emit('ready') })
       return watcher
     }
@@ -304,11 +304,11 @@ describe('HMR exact config paths', () => {
       observed.push(value)
       if (value === 'enabled') {
         writeFileSync(filename, 'disabled')
-        await watcher._emit('change', filename)
+        await watcher.emitEvent('change', filename)
       }
     })
     writeFileSync(filename, 'enabled')
-    await watcher._emit('change', filename)
+    await watcher.emitEvent('change', filename)
     await vi.waitFor(() => { expect(observed).toEqual(['enabled', 'disabled']) }, { timeout: 6_000 })
   }, 10_000)
 
@@ -374,7 +374,12 @@ describe('HMR exact config paths', () => {
     await dispose()
     expect(watcher.listenerCount('error')).toBe(1)
 
-    // Mirror the real close(): it drops every listener before a pending write-settle poll fires.
+    // Guards a dependency fallback to Chokidar 5: its `close()` removes the
+    // listeners but leaves an awaitWriteFinish poll armed, so a late `stat`
+    // failure reaches `error` with no listener. Chokidar 6 cancels pending
+    // writes and drains them inside `close()`, so that path is unreachable
+    // here; the case still proves the `watch-config.ts` re-attach contains
+    // any late error.
     expect(() => watcher.emit('error', Object.assign(
       new Error("EPERM: operation not permitted, stat 'C:\\Temp\\dsh\\.credentials.yaml'"),
       { code: 'EPERM', syscall: 'stat' },

@@ -623,11 +623,10 @@ export class LocalCredentialProvider extends CredentialProvider {
       // Quiesce: stop accepting events, close the watcher, then wait out any
       // queued or in-flight operation so nothing publishes after disposal.
       this.closed = true
-      // `close()` drops every listener but leaves a scheduled write-settle
-      // poll; its straggler stats the document this teardown is deleting,
-      // which Windows reports as EPERM, and an 'error' emission with no
-      // listener is rethrown as an uncaught exception. Re-attach across the
-      // close so that straggler stays inside this provider.
+      // Chokidar 6 cancels pending writes and stops emitting inside
+      // `close()`, so this re-attach is unreachable there; it exists so a
+      // dependency fallback to Chokidar 5 cannot turn a late watcher error
+      // into an uncaught exception.
       const closing = watcher.close()
       watcher.on('error', reportWatcherError)
       await closing

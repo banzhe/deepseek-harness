@@ -21,17 +21,20 @@ interface ChokidarFixture {
   readonly readdirpFiles: readonly string[]
 }
 
+/** Every JavaScript module Chokidar 6 loads through its `index.js` entry. */
+const CHOKIDAR_6_FILES = ['package.json', 'index.js', 'backend.js', 'policy.js', 'reconcile.js', 'runtime.js', 'tree.js']
+
 const CHOKIDAR_FIXTURES: readonly ChokidarFixture[] = [
   {
-    label: 'Chokidar 5 from credentials',
+    label: 'Chokidar 6 from credentials',
     consumerManifest: 'packages/credentials/credentials-local/package.json',
-    chokidarFiles: ['package.json', 'index.js', 'handler.js'],
+    chokidarFiles: CHOKIDAR_6_FILES,
     readdirpFiles: ['package.json', 'index.js'],
   },
   {
-    label: 'Chokidar 5 from skill-filesystem',
+    label: 'Chokidar 6 from skill-filesystem',
     consumerManifest: 'packages/skill/skill-filesystem/package.json',
-    chokidarFiles: ['package.json', 'index.js', 'handler.js'],
+    chokidarFiles: CHOKIDAR_6_FILES,
     readdirpFiles: ['package.json', 'index.js'],
   },
 ]
@@ -156,6 +159,10 @@ describe.each(CHOKIDAR_FIXTURES)('$label running unchanged', (fixture) => {
     await expect(added).resolves.toBe(path)
 
     const removed = onceEvent<string>(watcher, 'unlink')
+    // Chokidar 6 retires and re-establishes the native handle once a path that
+    // started missing appears, so a removal in the same turn as its 'add' races
+    // that handshake; the first case in this file settles the same way.
+    await delay(10)
     vfs.rmSync(path)
     await expect(removed).resolves.toBe(path)
   })

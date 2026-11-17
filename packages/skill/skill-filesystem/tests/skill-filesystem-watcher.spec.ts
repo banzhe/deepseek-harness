@@ -472,7 +472,12 @@ describe('skill-filesystem watcher failures', () => {
     await vi.waitFor(() => { expect(watcherHarness.watchers).toHaveLength(1) })
     const control = watcherHarness.watchers[0]
     if (control === undefined) throw new Error('expected an open root watcher')
-    // Mirror the real close(): it drops every listener before a pending write-settle poll fires.
+    // Stands in for Chokidar 5's `close()`, kept as a dependency-fallback
+    // defense: it removes the listeners without cancelling the pending
+    // write-settle poll, so a late `stat` failure reaches `error` with no
+    // listener. Chokidar 6 cancels pending writes and drains them inside
+    // `close()`, so that path is unreachable; the case still proves the
+    // re-attach in `index.ts` contains any late error.
     control.emitter.close = async () => {
       control.closeCalls += 1
       control.emitter.removeAllListeners()

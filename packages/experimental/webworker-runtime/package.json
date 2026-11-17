@@ -68,7 +68,7 @@
     "@types/estree": "^1.0.9",
     "@types/picomatch": "^4.0.3",
     "@types/readable-stream": "^4.0.24",
-    "chokidar": "5.0.0"
+    "chokidar": "6.0.0"
   },
   "files": [
     "lib/index.js",
